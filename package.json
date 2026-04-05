@@ -1,0 +1,32 @@
+{
+  "name": "voxara",
+  "version": "0.1.0",
+  "description": "Cross-browser extension that transforms PDFs into an interactive, audio-first reading experience",
+  "type": "module",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev:chrome": "vite --config vite.config.chrome.js",
+    "dev:firefox": "vite --config vite.config.firefox.js",
+    "build:chrome": "vite build --config vite.config.chrome.js",
+    "build:firefox": "vite build --config vite.config.firefox.js",
+    "build:edge": "vite build --config vite.config.edge.js",
+    "build": "vite build --config vite.config.chrome.js && vite build --config vite.config.firefox.js && vite build --config vite.config.edge.js",
+    "lint": "eslint src/",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "idb": "^8.0.0"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.26",
+    "eslint": "^9.0.0",
+    "fake-indexeddb": "^6.0.0",
+    "fast-check": "^3.0.0",
+    "vite": "^5.0.0",
+    "vitest": "^2.0.0"
+  }
+}
