@@ -94,11 +94,11 @@ Bootstrap the complete structural and tooling foundation for the Voxara browser 
     - **Property 9: MSG_TYPES enum is exhaustive and frozen**
     - **Validates: Requirements 7.2**
 
-- [-] 7. Checkpoint — Ensure all tests pass
+- [x] 7. Checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [~] 8. Implement `src/shared/db.js`
-  - [~] 8.1 Implement `initDB()` using `openDB` from `idb`
+  - [-] 8.1 Implement `initDB()` using `openDB` from `idb`
     - DB name `voxara`, version `1`
     - `upgrade` callback creates: `documents` store (keyPath `id`, index on `url`), `chunks` store (keyPath `id`, indexes on `documentId`, `sequenceIndex`, `text`), `playbackStates` store (keyPath `documentId`), `chatThreads` store (keyPath `id`)
     - Reject with `'IndexedDB upgrade failed: ' + error.message` on upgrade transaction failure
