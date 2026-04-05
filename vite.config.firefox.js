@@ -1,8 +1,21 @@
 import { defineConfig } from 'vite'
-import { crx } from '@crxjs/vite-plugin'
-import manifest from './manifests/manifest.firefox.json' with { type: 'json' }
+import { createRequire } from 'module'
+import { resolve } from 'path'
 
+const require = createRequire(import.meta.url)
+
+// Firefox MV2 — plain Vite build, no CRXJS (CRXJS only supports MV3)
 export default defineConfig({
-  plugins: [crx({ manifest })],
-  build: { outDir: 'dist/firefox-mv2', sourcemap: true }
+  build: {
+    outDir: 'dist/firefox-mv2',
+    sourcemap: true,
+    rollupOptions: {
+      input: {
+        background: resolve('src/background/index.js'),
+        content: resolve('src/content/index.js'),
+        sidepanel: resolve('src/sidepanel/index.html'),
+        options: resolve('src/options/index.html'),
+      },
+    },
+  },
 })
