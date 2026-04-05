@@ -115,7 +115,7 @@ Bootstrap the complete structural and tooling foundation for the Voxara browser 
     - **Property 8: initDB is idempotent on existing databases**
     - **Validates: Requirements 8.8**
 
-- [-] 9. Create GitHub Actions CI/CD pipeline
+- [x] 9. Create GitHub Actions CI/CD pipeline
   - Create `.github/workflows/ci.yml` with three sequential jobs: `lint` → `test` → `build`
   - `lint` job: checkout, setup Node, restore cache, `npm ci`, `npm run lint`
   - `test` job: depends on `lint`, runs `npm run test`
