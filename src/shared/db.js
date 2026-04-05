@@ -5,7 +5,7 @@ const DB_VERSION = 1
 
 export async function initDB() {
   return openDB(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion, newVersion, transaction) {
+    upgrade(db, _oldVersion, _newVersion, _transaction) {
       try {
         // documents store
         const docs = db.createObjectStore('documents', { keyPath: 'id' })

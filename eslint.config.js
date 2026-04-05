@@ -12,10 +12,11 @@ export default [
         browser: 'readonly',
         console: 'readonly',
         globalThis: 'readonly',
+        crypto: 'readonly',
       },
     },
     rules: {
-      'no-unused-vars': 'warn',
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'no-console': 'off',
     },
   },
