@@ -124,7 +124,7 @@ Bootstrap the complete structural and tooling foundation for the Voxara browser 
   - Trigger on push and pull_request to `main`
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9_
 
-- [~] 10. Final checkpoint — Ensure all tests pass
+- [-] 10. Final checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
