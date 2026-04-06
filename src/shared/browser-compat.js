@@ -105,7 +105,38 @@ export class BrowserCompat {
             })
           ),
       },
+
+      webNavigation: BrowserCompat._buildChromeWebNavigationAPI(c),
+      ports: BrowserCompat._buildChromePortsAPI(c),
+      offscreen: BrowserCompat._buildChromeOffscreenAPI(c),
     }
+  }
+
+  static _buildChromeWebNavigationAPI(c) {
+    if (c.webNavigation?.onCommitted) {
+      return {
+        addListener: (callback, filter) =>
+          c.webNavigation.onCommitted.addListener(callback, filter),
+      }
+    }
+    return BrowserCompat._noopWebNavigationAPI('chrome')
+  }
+
+  static _buildChromePortsAPI(c) {
+    return {
+      connect: (name) => c.runtime.connect({ name }),
+      onConnect: (handler) => c.runtime.onConnect.addListener(handler),
+    }
+  }
+
+  static _buildChromeOffscreenAPI(c) {
+    if (c.offscreen) {
+      return {
+        create: (params) => c.offscreen.createDocument(params),
+        close: () => c.offscreen.closeDocument(),
+      }
+    }
+    return BrowserCompat._noopOffscreenAPI('chrome')
   }
 
   static _buildChromeSidePanelAPI(c) {
@@ -141,6 +172,27 @@ export class BrowserCompat {
         query: (opts) => b.tabs.query(opts),
         update: (tabId, props) => b.tabs.update(tabId, props),
       },
+
+      webNavigation: BrowserCompat._buildFirefoxWebNavigationAPI(b),
+      ports: BrowserCompat._buildFirefoxPortsAPI(b),
+      offscreen: BrowserCompat._noopOffscreenAPI('firefox'),
+    }
+  }
+
+  static _buildFirefoxWebNavigationAPI(b) {
+    if (b.webNavigation?.onCommitted) {
+      return {
+        addListener: (callback, filter) =>
+          b.webNavigation.onCommitted.addListener(callback, filter),
+      }
+    }
+    return BrowserCompat._noopWebNavigationAPI('firefox')
+  }
+
+  static _buildFirefoxPortsAPI(b) {
+    return {
+      connect: (name) => b.runtime.connect({ name }),
+      onConnect: (handler) => b.runtime.onConnect.addListener(handler),
     }
   }
 
@@ -155,7 +207,7 @@ export class BrowserCompat {
   }
 
   // ---------------------------------------------------------------------------
-  // Fallback
+  // Fallback stubs
   // ---------------------------------------------------------------------------
 
   static _noopSidePanelAPI() {
@@ -164,5 +216,26 @@ export class BrowserCompat {
       return Promise.resolve()
     }
     return { open: warn, close: warn }
+  }
+
+  static _noopWebNavigationAPI(browser) {
+    return {
+      addListener: () => {
+        console.warn(`[BrowserCompat] webNavigation API not available in ${browser}`)
+      },
+    }
+  }
+
+  static _noopOffscreenAPI(browser) {
+    return {
+      create: () => {
+        console.warn(`[BrowserCompat] offscreen.create not available in ${browser}`)
+        return Promise.resolve()
+      },
+      close: () => {
+        console.warn(`[BrowserCompat] offscreen.close not available in ${browser}`)
+        return Promise.resolve()
+      },
+    }
   }
 }
