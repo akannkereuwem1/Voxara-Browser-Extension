@@ -3,9 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <title>Voxara</title>
+    <style>
+      .tab-content.hidden { display: none; }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <nav id="tabs">
+      <button class="tab-btn active" data-tab="player">Player</button>
+      <button class="tab-btn" data-tab="chat">Chat</button>
+      <button class="tab-btn" data-tab="library">Library</button>
+    </nav>
+    <div id="player" class="tab-content">
+      <p id="pdf-url">No PDF detected</p>
+      <p id="playback-status">idle</p>
+    </div>
+    <div id="chat" class="tab-content hidden"></div>
+    <div id="library" class="tab-content hidden"></div>
     <script type="module" src="./index.js"></script>
   </body>
 </html>
