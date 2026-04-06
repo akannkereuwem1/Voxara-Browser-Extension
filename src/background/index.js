@@ -50,12 +50,12 @@ export function broadcastState(state, ports) {
 // Message handlers
 // ---------------------------------------------------------------------------
 
-export function handlePdfDetected(payload, state, compat) {
+export function handlePdfDetected(payload, state, _compat) {
   state.activePdfUrl = payload.url
   broadcastState(state, state.connectedPorts)
 }
 
-export function handleAction(payload, state, compat) {
+export function handleAction(payload, state, _compat) {
   if (payload.type === 'PLAY')   state.playbackStatus = 'playing'
   if (payload.type === 'PAUSE')  state.playbackStatus = 'paused'
   if (payload.type === 'RESUME') state.playbackStatus = 'playing'
