@@ -298,9 +298,11 @@ describe('Property 7: ACTION message updates AppState and broadcasts', () => {
 describe('Property 8: Unrecognised message type — no state change', () => {
   it('property: unknown types are absent from dispatch table', () => {
     const knownTypes = new Set(Object.values(MSG_TYPES))
+    // Also exclude JS prototype property names that exist on any plain object
+    const protoKeys = new Set(Object.getOwnPropertyNames(Object.prototype))
     fc.assert(
       fc.property(
-        fc.string({ minLength: 1 }).filter(s => !knownTypes.has(s)),
+        fc.string({ minLength: 1 }).filter(s => !knownTypes.has(s) && !protoKeys.has(s)),
         (unknownType) => {
           const state = makeState()
           const compat = makeCompat()
