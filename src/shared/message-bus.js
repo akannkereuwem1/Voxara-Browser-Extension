@@ -24,6 +24,11 @@ export const MSG_TYPES = Object.freeze({
   ACTION: 'ACTION',
   // Voice
   VOICE_CHANGE: 'VOICE_CHANGE',
+  // PDF detection
+  PDF_DETECTED: 'PDF_DETECTED',
+  // Speech synthesis
+  SPEAK_CHUNK: 'SPEAK_CHUNK',
+  STOP_SPEECH: 'STOP_SPEECH',
 })
 
 // ---------------------------------------------------------------------------

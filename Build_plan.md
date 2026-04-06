@@ -1,4 +1,4 @@
-# VoiceDoc Browser Extension — Precise Build Plan
+# Voxara Browser Extension — Precise Build Plan
 **From zero to shipped, across every browser.**
 
 ---
@@ -43,7 +43,7 @@ Each phase has a clear goal, exact deliverables, and step-by-step tasks in the o
 ### Step 1 — Initialise the monorepo
 
 ```bash
-mkdir voicedoc && cd voicedoc
+mkdir Voxara && cd Voxara
 git init
 pnpm init
 ```
@@ -51,7 +51,7 @@ pnpm init
 ### Step 2 — Create workspace structure
 
 ```
-voicedoc/
+Voxara/
 ├── packages/
 │   └── extension/          # The browser extension
 ├── apps/
@@ -136,7 +136,7 @@ Create `manifest.chrome.json`:
 ```json
 {
   "manifest_version": 3,
-  "name": "VoiceDoc",
+  "name": "Voxara",
   "version": "0.1.0",
   "description": "Audio-first AI PDF reader",
   "permissions": [
@@ -164,7 +164,7 @@ Create `manifest.chrome.json`:
     "default_path": "src/sidepanel/index.html"
   },
   "action": {
-    "default_title": "VoiceDoc",
+    "default_title": "Voxara",
     "default_popup": ""
   },
   "icons": {
@@ -290,7 +290,7 @@ export interface Message<T = unknown> {
 Populate `src/shared/types/models.ts`:
 
 ```typescript
-export interface VoiceDocDocument {
+export interface VoxaraDocument {
   id: string
   url: string
   fileHash: string
@@ -362,7 +362,7 @@ export type AppStatePlaybackStatus =
   | 'ERROR'
 
 export interface AppState {
-  activeDocument: VoiceDocDocument | null
+  activeDocument: VoxaraDocument | null
   playback: PlaybackState | null
   playbackStatus: AppStatePlaybackStatus
   chat: {
@@ -383,12 +383,12 @@ Populate `src/lib/db/index.ts`:
 
 ```typescript
 import { openDB, DBSchema, IDBPDatabase } from 'idb'
-import type { VoiceDocDocument, Chunk, PlaybackState, ChatThread } from '../../shared/types/models'
+import type { VoxaraDocument, Chunk, PlaybackState, ChatThread } from '../../shared/types/models'
 
-interface VoiceDocDB extends DBSchema {
+interface VoxaraDB extends DBSchema {
   documents: {
     key: string
-    value: VoiceDocDocument
+    value: VoxaraDocument
     indexes: { 'by-lastOpenedAt': number }
   }
   chunks: {
@@ -410,11 +410,11 @@ interface VoiceDocDB extends DBSchema {
   }
 }
 
-let db: IDBPDatabase<VoiceDocDB>
+let db: IDBPDatabase<VoxaraDB>
 
 export async function getDB() {
   if (db) return db
-  db = await openDB<VoiceDocDB>('voicedoc', 1, {
+  db = await openDB<VoxaraDB>('Voxara', 1, {
     upgrade(db) {
       const docs = db.createObjectStore('documents', { keyPath: 'id' })
       docs.createIndex('by-lastOpenedAt', 'lastOpenedAt')
@@ -442,7 +442,7 @@ import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import type { AppState } from '../../shared/types/models'
 
-interface VoiceDocStore extends AppState {
+interface VoxaraStore extends AppState {
   setActiveDocument: (doc: AppState['activeDocument']) => void
   setPlaybackStatus: (status: AppState['playbackStatus']) => void
   updatePlayback: (patch: Partial<AppState['playback']>) => void
@@ -451,7 +451,7 @@ interface VoiceDocStore extends AppState {
   applyStateUpdate: (state: Partial<AppState>) => void
 }
 
-export const useStore = create<VoiceDocStore>()(
+export const useStore = create<VoxaraStore>()(
   subscribeWithSelector((set) => ({
     activeDocument: null,
     playback: null,
@@ -921,9 +921,9 @@ describe('chunkPages', () => {
 ```typescript
 // src/lib/db/documents.ts
 import { getDB } from '.'
-import type { VoiceDocDocument, Chunk } from '../../shared/types/models'
+import type { VoxaraDocument, Chunk } from '../../shared/types/models'
 
-export async function saveDocument(doc: VoiceDocDocument): Promise<void> {
+export async function saveDocument(doc: VoxaraDocument): Promise<void> {
   const db = await getDB()
   await db.put('documents', doc)
 }
@@ -1248,7 +1248,7 @@ function searchChunks(chunks: Chunk[], keywords: string[], limit: number): Chunk
 // src/lib/ai/service.ts
 import type { ChatMessage, Chunk } from '../../shared/types/models'
 
-const SYSTEM_PROMPT = `You are VoiceDoc, an AI reading assistant. The user is currently listening to a document. Your job is to help them understand it.
+const SYSTEM_PROMPT = `You are Voxara, an AI reading assistant. The user is currently listening to a document. Your job is to help them understand it.
 
 Rules:
 - Answer using ONLY the provided document context. Never invent information.
@@ -1461,7 +1461,7 @@ export async function buildGlobalContext(query: string): Promise<{
 ### Step 44 — Global system prompt
 
 ```typescript
-const GLOBAL_SYSTEM_PROMPT = `You are VoiceDoc, a personal AI research assistant with access to the user's document library.
+const GLOBAL_SYSTEM_PROMPT = `You are Voxara, a personal AI research assistant with access to the user's document library.
 
 Rules:
 - You may synthesise information across multiple documents.
@@ -1673,7 +1673,7 @@ async def synthesize(body: TtsRequest, user_id: str = Depends(get_current_user))
     audio_bytes = response.content
     r2_key = f"tts/{cache_key}.mp3"
     await upload_to_r2(r2_key, audio_bytes)
-    cdn_url = f"https://cdn.voicedoc.app/{r2_key}"
+    cdn_url = f"https://cdn.Voxara.app/{r2_key}"
 
     # Cache URL in Redis for 30 days
     await redis_client.setex(cache_key, 60 * 60 * 24 * 30, cdn_url)
@@ -1703,7 +1703,7 @@ async def sync(body: SyncRequest, user_id: str = Depends(get_current_user)):
 Add to Options page:
 - Login / Register form
 - API key input (for users who prefer direct OpenAI)
-- Toggle: "Use VoiceDoc backend" vs "Use my own API key"
+- Toggle: "Use Voxara backend" vs "Use my own API key"
 
 **Phase 6 complete ✓** — Backend live on Railway. Auth working. Premium TTS caches to R2. Sync endpoint merging states correctly.
 
@@ -1725,14 +1725,14 @@ Create `manifest.firefox.json` (MV2):
 ```json
 {
   "manifest_version": 2,
-  "name": "VoiceDoc",
+  "name": "Voxara",
   "version": "0.1.0",
   "permissions": ["storage", "activeTab", "tabs", "webNavigation", "<all_urls>"],
   "background": { "scripts": ["src/background/index.js"], "persistent": false },
   "content_scripts": [{ "matches": ["<all_urls>"], "js": ["src/content/index.js"] }],
   "sidebar_action": {
     "default_panel": "src/sidepanel/index.html",
-    "default_title": "VoiceDoc"
+    "default_title": "Voxara"
   }
 }
 ```
@@ -1786,8 +1786,8 @@ Verify in Edge:
 ```bash
 # Requires Xcode installed on macOS
 xcrun safari-web-extension-converter packages/extension/dist/ \
-  --app-name "VoiceDoc" \
-  --bundle-identifier "com.voicedoc.extension" \
+  --app-name "Voxara" \
+  --bundle-identifier "com.Voxara.extension" \
   --project-location apps/safari/
 ```
 
@@ -1814,7 +1814,7 @@ test.describe('PDF detection', () => {
       const browser = await browserType.launch({ args: [`--load-extension=dist/`] })
       const page = await browser.newPage()
       await page.goto('https://example.com/sample.pdf')
-      await expect(page.locator('[data-testid="voicedoc-player"]')).toBeVisible()
+      await expect(page.locator('[data-testid="Voxara-player"]')).toBeVisible()
       await browser.close()
     })
   }
@@ -1861,7 +1861,7 @@ For a 200-page PDF, parsing must complete in < 8s. Profile with Chrome DevTools 
 ### Step 65 — Onboarding flow
 
 First install triggers a welcome screen in the Side Panel:
-1. "Welcome to VoiceDoc" — one sentence explanation
+1. "Welcome to Voxara" — one sentence explanation
 2. "Open any PDF in your browser to get started"
 3. Optional: enter API key or create account
 
@@ -2000,7 +2000,7 @@ Railway setup:
 2. Create service from `apps/backend/`
 3. Add environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_JWT_SECRET`, `OPENAI_API_KEY`, `REDIS_URL`, `R2_BUCKET`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`
 4. Enable Railway's built-in HTTPS (auto-provisioned)
-5. Set custom domain: `api.voicedoc.app`
+5. Set custom domain: `api.Voxara.app`
 
 ### Step 75 — Supabase production setup
 
@@ -2011,9 +2011,9 @@ Railway setup:
 
 ### Step 76 — Cloudflare R2 bucket
 
-1. Create R2 bucket: `voicedoc-tts-cache`
+1. Create R2 bucket: `Voxara-tts-cache`
 2. Create public access policy for `tts/*` prefix
-3. Set custom domain: `cdn.voicedoc.app`
+3. Set custom domain: `cdn.Voxara.app`
 
 ---
 
@@ -2025,7 +2025,7 @@ Railway setup:
 - [ ] All icons present: 16, 48, 128px PNG
 - [ ] Screenshots prepared: 1280x800 PNG, at least 3
 - [ ] Promotional tile: 440x280 PNG
-- [ ] Privacy policy published at `voicedoc.app/privacy`
+- [ ] Privacy policy published at `Voxara.app/privacy`
 - [ ] Permission justification written for all 7 permissions
 - [ ] Extension tested on Chrome stable (not just dev/canary)
 - [ ] No `eval()` or remote code execution anywhere
@@ -2034,7 +2034,7 @@ Railway setup:
 
 ```bash
 pnpm --filter extension build:chrome
-cd packages/extension/dist && zip -r ../../../release/voicedoc-chrome-1.0.0.zip .
+cd packages/extension/dist && zip -r ../../../release/Voxara-chrome-1.0.0.zip .
 ```
 
 ### Step 79 — Submit to Chrome Web Store
@@ -2055,7 +2055,7 @@ cd packages/extension/dist && zip -r ../../../release/voicedoc-chrome-1.0.0.zip 
 
 ```bash
 pnpm --filter extension build:firefox
-cd packages/extension/dist-firefox && zip -r ../../../release/voicedoc-firefox-1.0.0.zip .
+cd packages/extension/dist-firefox && zip -r ../../../release/Voxara-firefox-1.0.0.zip .
 ```
 
 ### Step 81 — Submit to AMO
@@ -2137,8 +2137,8 @@ For the first 72 hours after Chrome launch:
 
 | Store | Build Command | Package | Submit Day |
 |---|---|---|---|
-| Chrome Web Store | `build:chrome` | `voicedoc-chrome-1.0.0.zip` | Day 65 |
-| Firefox AMO | `build:firefox` | `voicedoc-firefox-1.0.0.zip` | Day 67 |
+| Chrome Web Store | `build:chrome` | `Voxara-chrome-1.0.0.zip` | Day 65 |
+| Firefox AMO | `build:firefox` | `Voxara-firefox-1.0.0.zip` | Day 67 |
 | Edge Add-ons | `build:chrome` (same) | (same as Chrome) | Day 68 |
 | Safari App Store | Xcode archive | `.xcarchive` | Day 69 |
 
@@ -2158,4 +2158,4 @@ Once v1.0 is live and stable, the priority order for v1.1:
 
 ---
 
-*VoiceDoc Build Plan v1.0 — 14–16 weeks, 86 steps, 4 browser stores.*
+*Voxara Build Plan v1.0 — 14–16 weeks, 86 steps, 4 browser stores.*
