@@ -117,6 +117,7 @@ export async function renderLibrary(document, compat) {
   container.querySelectorAll('[data-load]').forEach((btn) => {
     btn.addEventListener('click', () =>
       sendMessage(MSG_TYPES.LOAD_DOCUMENT, { documentId: btn.dataset.load }, compat)
+        .catch((err) => console.warn('[SidePanel] LOAD_DOCUMENT failed:', err))
     )
   })
   container.querySelectorAll('[data-delete]').forEach((btn) => {
