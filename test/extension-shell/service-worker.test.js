@@ -267,23 +267,23 @@ describe('Property 7: ACTION message updates AppState and broadcasts', () => {
   ]
 
   for (const { type, expected } of actionMap) {
-    it(`ACTION ${type} sets playbackStatus to ${expected}`, () => {
+    it(`ACTION ${type} sets playbackStatus to ${expected}`, async () => {
       const state = makeState()
       const port = makePort()
       state.connectedPorts = [port]
-      handleAction({ type }, state, null)
+      await handleAction({ type }, state, makeCompat())
       expect(state.playbackStatus).toBe(expected)
       expect(port.messages[0]?.type).toBe(MSG_TYPES.STATE_UPDATE)
     })
   }
 
-  it('property: any recognised action broadcasts STATE_UPDATE', () => {
-    fc.assert(
-      fc.property(fc.constantFrom('PLAY', 'PAUSE', 'RESUME', 'STOP'), (type) => {
+  it('property: any recognised action broadcasts STATE_UPDATE', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.constantFrom('PLAY', 'PAUSE', 'RESUME', 'STOP'), async (type) => {
         const state = makeState()
         const port = makePort()
         state.connectedPorts = [port]
-        handleAction({ type }, state, null)
+        await handleAction({ type }, state, makeCompat())
         return port.messages.length > 0 && port.messages[0].type === MSG_TYPES.STATE_UPDATE
       }),
       { numRuns: 100 }
