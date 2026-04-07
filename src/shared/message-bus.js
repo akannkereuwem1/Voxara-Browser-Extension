@@ -37,6 +37,15 @@ export const MSG_TYPES = Object.freeze({
   DEDUP_CHECK:     'DEDUP_CHECK',
   FETCH_PDF:       'FETCH_PDF',
   PING:            'PING',
+  // Phase 3 — Audio Engine
+  PLAYBACK_ENDED: 'PLAYBACK_ENDED',
+  SET_VOICE:      'SET_VOICE',
+  SET_RATE:       'SET_RATE',
+  SET_PITCH:      'SET_PITCH',
+  SET_VOLUME:     'SET_VOLUME',
+  SKIP_FORWARD:   'SKIP_FORWARD',
+  SKIP_BACK:      'SKIP_BACK',
+  SEEK_TO_CHUNK:  'SEEK_TO_CHUNK',
 })
 
 // ---------------------------------------------------------------------------
