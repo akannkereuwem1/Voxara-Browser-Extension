@@ -12,6 +12,10 @@ export const DEFAULT_APP_STATE = {
   currentChunkIndex: 0,
   connectedPorts:    [],
   offscreenOpen:     false,
+  // Phase 2 additions
+  activeDocumentId:  null,
+  parseStatus:       'idle',
+  parseProgress:     null,
 }
 
 export let appState = { ...DEFAULT_APP_STATE }
@@ -25,6 +29,9 @@ export function serializeState(state) {
     activePdfUrl:      state.activePdfUrl,
     playbackStatus:    state.playbackStatus,
     currentChunkIndex: state.currentChunkIndex,
+    activeDocumentId:  state.activeDocumentId,
+    parseStatus:       state.parseStatus,
+    parseProgress:     state.parseProgress,
   }
 }
 

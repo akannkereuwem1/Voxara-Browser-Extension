@@ -29,6 +29,11 @@ export const MSG_TYPES = Object.freeze({
   // Speech synthesis
   SPEAK_CHUNK: 'SPEAK_CHUNK',
   STOP_SPEECH: 'STOP_SPEECH',
+  // Phase 2 — PDF parsing pipeline
+  PDF_PARSE_START: 'PDF_PARSE_START',
+  PARSE_PROGRESS:  'PARSE_PROGRESS',
+  PDF_PARSED:      'PDF_PARSED',
+  LOAD_DOCUMENT:   'LOAD_DOCUMENT',
 })
 
 // ---------------------------------------------------------------------------
