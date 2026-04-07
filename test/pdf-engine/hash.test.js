@@ -42,3 +42,58 @@ describe('MSG_TYPES Phase 2 completeness and immutability', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// hashArrayBuffer property tests
+// Validates: Requirements 2.2, 2.3, 2.5
+// ---------------------------------------------------------------------------
+
+import { hashArrayBuffer } from '../../src/shared/hash.js'
+
+describe('hashArrayBuffer', () => {
+  // Property 2: determinism — same bytes → same hash
+  it('Property 2: determinism (same bytes → same hash)', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.uint8Array({ minLength: 1, maxLength: 1024 }), async (bytes) => {
+        const buf1 = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+        const buf2 = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+        const [h1, h2] = await Promise.all([hashArrayBuffer(buf1), hashArrayBuffer(buf2)])
+        expect(h1).toBe(h2)
+      }),
+      { numRuns: 100 }
+    )
+  })
+
+  // Property 3: collision resistance — different bytes → different hash
+  it('Property 3: collision resistance (different bytes → different hash)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uint8Array({ minLength: 1, maxLength: 512 }),
+        fc.uint8Array({ minLength: 1, maxLength: 512 }),
+        async (a, b) => {
+          // Only test when arrays differ
+          const aStr = Array.from(a).join(',')
+          const bStr = Array.from(b).join(',')
+          if (aStr === bStr) return
+          const bufA = a.buffer.slice(a.byteOffset, a.byteOffset + a.byteLength)
+          const bufB = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)
+          const [hA, hB] = await Promise.all([hashArrayBuffer(bufA), hashArrayBuffer(bufB)])
+          expect(hA).not.toBe(hB)
+        }
+      ),
+      { numRuns: 100 }
+    )
+  })
+
+  // Property 4: output format — always 64 lowercase hex chars
+  it('Property 4: output format (always 64 lowercase hex chars)', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.uint8Array({ minLength: 1, maxLength: 1024 }), async (bytes) => {
+        const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+        const hash = await hashArrayBuffer(buf)
+        expect(hash).toMatch(/^[0-9a-f]{64}$/)
+      }),
+      { numRuns: 100 }
+    )
+  })
+})
