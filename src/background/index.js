@@ -72,9 +72,23 @@ export function handlePdfDetected(payload, state, _compat) {
   broadcastState(state, state.connectedPorts)
 }
 
-export async function handleAction(payload, state, _compat, db) {
-  if (payload.type === 'PLAY')   state.playbackStatus = 'playing'
-  if (payload.type === 'PAUSE')  state.playbackStatus = 'paused'
+export async function handleAction(payload, state, compat, db) {
+  if (payload.type === 'PLAY') {
+    state.playbackStatus = 'playing'
+    await ensureOffscreen(state, compat)
+    sendMessage(MSG_TYPES.SPEAK_CHUNK, {
+      documentId:      state.activeDocumentId,
+      startChunkIndex: state.currentChunkIndex,
+      playbackRate:    state.playbackRate,
+      pitch:           state.pitch,
+      volume:          state.volume,
+      voiceId:         state.voiceId,
+    }, compat)
+  }
+  if (payload.type === 'PAUSE') {
+    state.playbackStatus = 'paused'
+    sendMessage(MSG_TYPES.STOP_SPEECH, {}, compat)
+  }
   if (payload.type === 'RESUME') state.playbackStatus = 'playing'
   if (payload.type === 'STOP')   state.playbackStatus = 'idle'
 
@@ -82,8 +96,9 @@ export async function handleAction(payload, state, _compat, db) {
     const { documentId } = payload.data ?? {}
     if (documentId) {
       try {
-        const tx = db.transaction(['documents', 'chunks'], 'readwrite')
+        const tx = db.transaction(['documents', 'chunks', 'playbackStates'], 'readwrite')
         tx.objectStore('documents').delete(documentId)
+        tx.objectStore('playbackStates').delete(documentId)
         const allChunks = await tx.objectStore('chunks').index('documentId').getAllKeys(documentId)
         for (const key of allChunks) tx.objectStore('chunks').delete(key)
         await tx.done
@@ -105,9 +120,29 @@ export function handleChunkStarted(payload, state) {
   broadcastState(state, state.connectedPorts)
 }
 
-export function handleChunkEnded(payload, state) {
+export async function handleChunkEnded(payload, state, db) {
   state.currentChunkIndex = payload.chunkIndex
   broadcastState(state, state.connectedPorts)
+
+  if (!db || !state.activeDocumentId) return
+  try {
+    const doc = await db.get('documents', state.activeDocumentId)
+    const totalChunkCount = doc?.chunkCount ?? 1
+    const record = {
+      documentId:         state.activeDocumentId,
+      currentChunkIndex:  payload.chunkIndex,
+      currentOffsetChars: 0,
+      playbackRate:       state.playbackRate,
+      pitch:              state.pitch,
+      volume:             state.volume,
+      voiceId:            state.voiceId,
+      completionPercent:  ((payload.chunkIndex + 1) / totalChunkCount) * 100,
+      updatedAt:          Date.now(),
+    }
+    await db.put('playbackStates', record)
+  } catch (err) {
+    console.error('[SW] PlaybackState persistence failed:', err)
+  }
 }
 
 export async function ensureOffscreen(state, compat) {
@@ -354,7 +389,7 @@ export function buildDispatchTable(state, compat, db) {
     [MSG_TYPES.SPEAK_CHUNK]:     (payload) => handleSpeakChunk(payload, state, compat),
     [MSG_TYPES.STOP_SPEECH]:     (payload) => handleStopSpeech(payload, state, compat),
     [MSG_TYPES.CHUNK_STARTED]:   (payload) => handleChunkStarted(payload, state),
-    [MSG_TYPES.CHUNK_ENDED]:     (payload) => handleChunkEnded(payload, state),
+    [MSG_TYPES.CHUNK_ENDED]:     (payload) => handleChunkEnded(payload, state, db),
     [MSG_TYPES.PDF_PARSE_START]: (payload) => handlePdfParseStart(payload, state, db),
     [MSG_TYPES.PARSE_PROGRESS]:  (payload) => handleParseProgress(payload, state),
     [MSG_TYPES.PDF_PARSED]:      (payload) => handlePdfParsed(payload, state, db),
@@ -401,6 +436,11 @@ export async function startup(compat, stateRef) {
         if (typeof latest.currentChunkIndex === 'number') {
           stateRef.currentChunkIndex = latest.currentChunkIndex
         }
+        // Phase 3: restore audio settings
+        if (typeof latest.playbackRate === 'number') stateRef.playbackRate = latest.playbackRate
+        if (typeof latest.pitch        === 'number') stateRef.pitch        = latest.pitch
+        if (typeof latest.volume       === 'number') stateRef.volume       = latest.volume
+        if (latest.voiceId != null)                  stateRef.voiceId      = latest.voiceId
       }
       if (allDocs.length > 0) {
         const latest = allDocs[allDocs.length - 1]

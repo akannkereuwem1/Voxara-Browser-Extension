@@ -286,3 +286,141 @@ describe('Property 12: SEEK_TO_CHUNK updates index and forwards when playing', (
     expect(state.playbackStatus).toBe('ended')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Property 13: PlaybackState persistence round-trip
+// Validates: Requirements 10.1, 10.2, 10.5
+// ---------------------------------------------------------------------------
+
+import { installFakeIDB } from '../setup.js'
+import { initDB } from '../../src/shared/db.js'
+import { handleChunkEnded, handleAction, startup } from '../../src/background/index.js'
+
+describe('Property 13: PlaybackState persistence round-trip', () => {
+  it('handleChunkEnded writes a PlaybackState record with all required fields', async () => {
+    installFakeIDB()
+    const db = await initDB()
+
+    // Seed a document
+    await db.put('documents', { id: 'doc1', chunkCount: 10, url: 'https://x.com/a.pdf' })
+
+    const state = makeState({
+      activeDocumentId: 'doc1',
+      playbackRate: 1.5,
+      pitch: 0.9,
+      volume: 0.8,
+      voiceId: 'urn:v:1',
+    })
+
+    await handleChunkEnded({ chunkIndex: 4 }, state, db)
+
+    const record = await db.get('playbackStates', 'doc1')
+    expect(record).toBeDefined()
+    expect(record.documentId).toBe('doc1')
+    expect(record.currentChunkIndex).toBe(4)
+    expect(record.currentOffsetChars).toBe(0)
+    expect(record.playbackRate).toBe(1.5)
+    expect(record.pitch).toBe(0.9)
+    expect(record.volume).toBe(0.8)
+    expect(record.voiceId).toBe('urn:v:1')
+    expect(record.completionPercent).toBeCloseTo(50)
+    expect(typeof record.updatedAt).toBe('number')
+  })
+
+  it('property: completionPercent = (chunkIndex+1)/chunkCount*100', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 20 }),
+        fc.integer({ min: 0, max: 19 }),
+        async (chunkCount, chunkIndex) => {
+          const validIndex = Math.min(chunkIndex, chunkCount - 1)
+          installFakeIDB()
+          const db = await initDB()
+          await db.put('documents', { id: 'doc1', chunkCount })
+          const state = makeState({ activeDocumentId: 'doc1' })
+          await handleChunkEnded({ chunkIndex: validIndex }, state, db)
+          const record = await db.get('playbackStates', 'doc1')
+          const expected = ((validIndex + 1) / chunkCount) * 100
+          expect(record.completionPercent).toBeCloseTo(expected, 5)
+        }
+      ),
+      { numRuns: 50 }
+    )
+  })
+
+  it('handleChunkEnded logs and continues on DB failure — does not throw', async () => {
+    const badDb = {
+      get: vi.fn(async () => { throw new Error('db fail') }),
+      put: vi.fn(),
+    }
+    const state = makeState({ activeDocumentId: 'doc1' })
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await expect(handleChunkEnded({ chunkIndex: 0 }, state, badDb)).resolves.not.toThrow()
+    expect(errSpy).toHaveBeenCalled()
+    errSpy.mockRestore()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Property 14: AppState hydration from PlaybackState on startup
+// Validates: Requirements 9.3, 10.3
+// ---------------------------------------------------------------------------
+
+describe('Property 14: AppState hydration from PlaybackState on startup', () => {
+  it('startup restores Phase 3 fields from PlaybackState record', async () => {
+    installFakeIDB()
+    const db = await initDB()
+    await db.put('playbackStates', {
+      documentId:        'doc1',
+      currentChunkIndex: 7,
+      playbackRate:      2.0,
+      pitch:             1.2,
+      volume:            0.5,
+      voiceId:           'urn:v:test',
+    })
+
+    const state = makeState()
+    const compat = {
+      webNavigation: { addListener: vi.fn() },
+      ports: { onConnect: vi.fn() },
+      runtime: { sendMessage: vi.fn(() => Promise.resolve()), onMessage: vi.fn() },
+      offscreen: { create: vi.fn(() => Promise.resolve()), close: vi.fn(() => Promise.resolve()) },
+    }
+    await startup(compat, state)
+
+    expect(state.currentChunkIndex).toBe(7)
+    expect(state.playbackRate).toBe(2.0)
+    expect(state.pitch).toBe(1.2)
+    expect(state.volume).toBe(0.5)
+    expect(state.voiceId).toBe('urn:v:test')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Property 15: PlaybackState deleted with document
+// Validates: Requirement 10.6
+// ---------------------------------------------------------------------------
+
+describe('Property 15: PlaybackState deleted with document', () => {
+  it('DELETE_DOCUMENT removes PlaybackState in the same transaction', async () => {
+    installFakeIDB()
+    const db = await initDB()
+
+    // Seed document, chunks, and playbackState
+    await db.put('documents', { id: 'doc1', chunkCount: 3, url: 'https://x.com/a.pdf' })
+    await db.put('chunks', { id: 'c0', documentId: 'doc1', sequenceIndex: 0, text: 'a' })
+    await db.put('playbackStates', { documentId: 'doc1', currentChunkIndex: 1 })
+
+    const state = makeState({ activeDocumentId: 'doc1' })
+    const compat = makeCompat()
+    await handleAction({ type: 'DELETE_DOCUMENT', data: { documentId: 'doc1' } }, state, compat, db)
+
+    const doc     = await db.get('documents', 'doc1')
+    const ps      = await db.get('playbackStates', 'doc1')
+    const chunks  = await db.getAllFromIndex('chunks', 'documentId', 'doc1')
+
+    expect(doc).toBeUndefined()
+    expect(ps).toBeUndefined()
+    expect(chunks).toHaveLength(0)
+  })
+})
