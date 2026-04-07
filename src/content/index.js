@@ -65,6 +65,12 @@ export function attachMutationObserver(reportedUrls, compatRef) {
  * @param {object} [pdfjsLib] - Optional injected PDF.js (for tests)
  */
 export async function parsePdf(url, compat, pdfjsLib) {
+  // Wake the service worker before starting the pipeline.
+  // The backoff retry in browser-compat handles the wake-up race transparently.
+  try {
+    await sendMessage(MSG_TYPES.PING, {}, compat)
+  } catch (_) { /* SW may already be awake — ignore ping failures */ }
+
   // 1. Notify service worker that parsing has started
   await sendMessage(MSG_TYPES.PDF_PARSE_START, { url, title: null, pageCount: null }, compat)
 

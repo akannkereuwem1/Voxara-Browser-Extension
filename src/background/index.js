@@ -276,6 +276,7 @@ export function buildDispatchTable(state, compat, db) {
     [MSG_TYPES.LOAD_DOCUMENT]:   (payload) => handleLoadDocument(payload, state, db),
     [MSG_TYPES.DEDUP_CHECK]:     (payload) => handleDedupCheck(payload, db),
     [MSG_TYPES.FETCH_PDF]:       (payload) => handleFetchPdf(payload),
+    [MSG_TYPES.PING]:            () => ({ pong: true }),
   }
 }
 

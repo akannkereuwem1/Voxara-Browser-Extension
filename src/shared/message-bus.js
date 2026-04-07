@@ -36,6 +36,7 @@ export const MSG_TYPES = Object.freeze({
   LOAD_DOCUMENT:   'LOAD_DOCUMENT',
   DEDUP_CHECK:     'DEDUP_CHECK',
   FETCH_PDF:       'FETCH_PDF',
+  PING:            'PING',
 })
 
 // ---------------------------------------------------------------------------

@@ -79,25 +79,25 @@ export class BrowserCompat {
       runtime: {
         sendMessage: (msg) =>
           new Promise((resolve, reject) => {
-            c.runtime.sendMessage(msg, (response) => {
-              const err = c.runtime.lastError
-              if (err) {
-                // "Receiving end does not exist" means the service worker is waking up.
-                // Retry once after a short delay to give it time to initialize.
-                if (err.message?.includes('Receiving end does not exist')) {
-                  setTimeout(() => {
-                    c.runtime.sendMessage(msg, (retryResponse) => {
-                      if (c.runtime.lastError) reject(c.runtime.lastError)
-                      else resolve(retryResponse)
-                    })
-                  }, 200)
+            const WAKE_ERROR = 'Receiving end does not exist'
+            const DELAYS = [100, 300, 600, 1000] // exponential backoff delays ms
+
+            function attempt(remainingDelays) {
+              c.runtime.sendMessage(msg, (response) => {
+                const err = c.runtime.lastError
+                if (!err) {
+                  resolve(response)
+                  return
+                }
+                if (err.message?.includes(WAKE_ERROR) && remainingDelays.length > 0) {
+                  setTimeout(() => attempt(remainingDelays.slice(1)), remainingDelays[0])
                 } else {
                   reject(err)
                 }
-              } else {
-                resolve(response)
-              }
-            })
+              })
+            }
+
+            attempt(DELAYS)
           }),
         onMessage: (handler) => c.runtime.onMessage.addListener(
           (msg, sender, sendResponse) => handler(msg, sender, sendResponse)
