@@ -70,7 +70,7 @@ export async function parsePdf(url, compat, pdfjsLib) {
 
   try {
     // 2. Fetch PDF bytes and compute hash
-    const { arrayBuffer, pdf } = await loadPdf(url, pdfjsLib)
+    const { arrayBuffer, pdf } = await loadPdf(url, pdfjsLib, compat)
     const fileHash = await hashArrayBuffer(arrayBuffer)
 
     // 3. Deduplication check

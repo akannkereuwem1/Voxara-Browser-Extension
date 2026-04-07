@@ -244,6 +244,20 @@ export async function handleDedupCheck(payload, db) {
   return { duplicate: false }
 }
 
+export async function handleFetchPdf(payload) {
+  try {
+    const response = await fetch(payload.url)
+    if (!response.ok) {
+      return { error: `HTTP ${response.status}` }
+    }
+    const arrayBuffer = await response.arrayBuffer()
+    // Transfer as Uint8Array — ArrayBuffer is not directly cloneable through sendMessage
+    return { bytes: Array.from(new Uint8Array(arrayBuffer)) }
+  } catch (err) {
+    return { error: err.message }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Dispatch table
 // ---------------------------------------------------------------------------
@@ -261,6 +275,7 @@ export function buildDispatchTable(state, compat, db) {
     [MSG_TYPES.PDF_PARSED]:      (payload) => handlePdfParsed(payload, state, db),
     [MSG_TYPES.LOAD_DOCUMENT]:   (payload) => handleLoadDocument(payload, state, db),
     [MSG_TYPES.DEDUP_CHECK]:     (payload) => handleDedupCheck(payload, db),
+    [MSG_TYPES.FETCH_PDF]:       (payload) => handleFetchPdf(payload),
   }
 }
 
