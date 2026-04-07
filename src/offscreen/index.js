@@ -1,7 +1,5 @@
 import { BrowserCompat } from '../shared/browser-compat.js'
 import { MSG_TYPES, onMessage, sendMessage } from '../shared/message-bus.js'
-import { initDB } from '../shared/db.js'
-import { createVoiceManager } from '../lib/audio/voices.js'
 
 // ---------------------------------------------------------------------------
 // Web Speech API availability check
@@ -13,30 +11,29 @@ if (typeof window !== 'undefined' && !window.speechSynthesis) {
 
 // ---------------------------------------------------------------------------
 // Buffer Manager
+// Replaces the old single-utterance handleSpeakChunk / handleStopSpeech.
 // ---------------------------------------------------------------------------
 
 /**
  * Create a Buffer Manager instance.
  *
- * Maintains a ChunkQueue with up to 3 lookahead chunks, speaks utterances
- * sequentially, and emits CHUNK_STARTED / CHUNK_ENDED / PLAYBACK_ENDED events.
- *
- * @param {SpeechSynthesis} synth
+ * @param {SpeechSynthesis} synth - window.speechSynthesis
  * @param {object} db - idb database instance
- * @param {function} send - fn(type, payload)
+ * @param {function} send - fn(type, payload) — sends a message to the Service Worker
  * @param {object} settings - { playbackRate, pitch, volume, voiceId }
- * @returns {object} handler methods
  */
 export function createBufferManager(synth, db, send, settings) {
+  /** @type {Array<{id:string, documentId:string, sequenceIndex:number, text:string}>} */
   let queue = []
   let currentIndex = 0
   let documentId = null
   let totalChunks = 0
 
-  let rate    = settings.playbackRate ?? 1.0
-  let pitch   = settings.pitch        ?? 1.0
-  let volume  = settings.volume       ?? 1.0
-  let voiceURI = settings.voiceId     ?? null
+  // Internal settings — mutated by SET_* handlers; take effect on next utterance
+  let rate     = settings?.playbackRate ?? 1.0
+  let pitch    = settings?.pitch        ?? 1.0
+  let volume   = settings?.volume       ?? 1.0
+  let voiceURI = settings?.voiceId      ?? null
 
   async function loadChunks(docId, fromIndex, count = 4) {
     const all = await db.getAllFromIndex('chunks', 'documentId', docId)
@@ -50,6 +47,9 @@ export function createBufferManager(synth, db, send, settings) {
     utterance.volume = volume
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       const voice = window.speechSynthesis.getVoices().find((v) => v.voiceURI === voiceURI)
+      if (voice) utterance.voice = voice
+    } else if (synth.getVoices) {
+      const voice = synth.getVoices().find((v) => v.voiceURI === voiceURI)
       if (voice) utterance.voice = voice
     }
   }
@@ -95,7 +95,7 @@ export function createBufferManager(synth, db, send, settings) {
     const doc = await db.get('documents', documentId)
     totalChunks = doc?.chunkCount ?? 0
 
-    // Load first chunk immediately — critical path for 800ms budget
+    // Load first chunk immediately and speak before loading lookahead
     const first = await loadChunks(documentId, startIndex, 1)
     queue = first
     currentIndex = startIndex
@@ -138,11 +138,12 @@ export function createBufferManager(synth, db, send, settings) {
 }
 
 // ---------------------------------------------------------------------------
-// Register handlers
+// Register all Phase 3 message handlers
 // ---------------------------------------------------------------------------
 
 /**
- * Register all Phase 3 message handlers against a compat instance.
+ * Register message handlers against a compat instance.
+ * Exported for testing.
  *
  * @param {object} compat - BrowserCompat API
  * @param {SpeechSynthesis} synth
@@ -170,11 +171,7 @@ export function registerHandlers(compat, synth, db, initialSettings = {}) {
 
 if (typeof chrome !== 'undefined' || typeof browser !== 'undefined') {
   const compat = BrowserCompat.init()
-  initDB().then((db) => {
-    const vm = createVoiceManager(window.speechSynthesis, compat.storage ?? chrome.storage.sync)
-    vm.init()
-    registerHandlers(compat, window.speechSynthesis, db, {
-      playbackRate: 1.0, pitch: 1.0, volume: 1.0, voiceId: null,
-    })
-  }).catch((err) => console.error('[Offscreen] DB init failed:', err))
+  // db and initialSettings are wired at runtime via the Service Worker SPEAK_CHUNK payload
+  // For now bootstrap with null db — the Buffer Manager will receive db via handleSpeakChunk
+  registerHandlers(compat, window.speechSynthesis, null, {})
 }
