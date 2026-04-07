@@ -103,17 +103,118 @@ export async function handleStopSpeech(payload, state, compat) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 2 handlers
+// ---------------------------------------------------------------------------
+
+export async function handlePdfParseStart(payload, state, db) {
+  if (payload.parseStatus === 'failed') {
+    state.parseStatus = 'failed'
+    broadcastState(state, state.connectedPorts)
+    return
+  }
+  const doc = {
+    id: crypto.randomUUID(),
+    url: payload.url,
+    fileHash: null,
+    title: payload.title ?? null,
+    pageCount: payload.pageCount ?? null,
+    chunkCount: 0,
+    language: 'en',
+    parseStatus: 'pending',
+    createdAt: Date.now(),
+    lastOpenedAt: Date.now(),
+    sizeBytesEstimate: 0,
+  }
+  if (db) await db.put('documents', doc)
+  state.parseStatus = 'pending'
+  state.parseProgress = null
+  broadcastState(state, state.connectedPorts)
+}
+
+export function handleParseProgress(payload, state) {
+  state.parseProgress = {
+    pagesProcessed: payload.pagesProcessed,
+    totalPages: payload.totalPages,
+  }
+  broadcastState(state, state.connectedPorts)
+}
+
+export async function handlePdfParsed(payload, state, db) {
+  try {
+    const docId = payload.chunks?.[0]?.documentId ?? crypto.randomUUID()
+    const doc = {
+      id: docId,
+      url: payload.url,
+      fileHash: payload.fileHash,
+      title: payload.title,
+      pageCount: payload.pageCount,
+      chunkCount: payload.chunks.length,
+      language: payload.language ?? 'en',
+      parseStatus: 'complete',
+      createdAt: Date.now(),
+      lastOpenedAt: Date.now(),
+      sizeBytesEstimate: payload.chunks.reduce((s, c) => s + c.text.length * 2, 0),
+    }
+    if (db) {
+      const tx = db.transaction(['documents', 'chunks'], 'readwrite')
+      tx.objectStore('documents').put(doc)
+      for (const chunk of payload.chunks) {
+        tx.objectStore('chunks').put(chunk)
+      }
+      await tx.done
+    }
+    state.parseStatus = 'complete'
+    state.parseProgress = null
+    state.activeDocumentId = docId
+  } catch (err) {
+    console.error('[SW] IndexedDB write failed:', err)
+    state.parseStatus = 'failed'
+  }
+  broadcastState(state, state.connectedPorts)
+}
+
+export async function handleLoadDocument(payload, state, db) {
+  if (db) {
+    const doc = await db.get('documents', payload.documentId)
+    if (doc) {
+      doc.lastOpenedAt = Date.now()
+      await db.put('documents', doc)
+      state.activeDocumentId = doc.id
+      state.activePdfUrl = doc.url
+    } else {
+      console.warn('[SW] LOAD_DOCUMENT: documentId not found:', payload.documentId)
+    }
+  }
+  broadcastState(state, state.connectedPorts)
+}
+
+export async function handleDedupCheck(payload, db) {
+  if (!db) return { duplicate: false }
+  try {
+    const existing = await db.getFromIndex('documents', 'fileHash', payload.fileHash)
+    if (existing && existing.parseStatus === 'complete') {
+      return { duplicate: true, documentId: existing.id }
+    }
+  } catch (_) { /* index may not exist yet */ }
+  return { duplicate: false }
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch table
 // ---------------------------------------------------------------------------
 
-export function buildDispatchTable(state, compat) {
+export function buildDispatchTable(state, compat, db) {
   return {
-    [MSG_TYPES.PDF_DETECTED]:  (payload) => handlePdfDetected(payload, state, compat),
-    [MSG_TYPES.ACTION]:        (payload) => handleAction(payload, state, compat),
-    [MSG_TYPES.SPEAK_CHUNK]:   (payload) => handleSpeakChunk(payload, state, compat),
-    [MSG_TYPES.STOP_SPEECH]:   (payload) => handleStopSpeech(payload, state, compat),
-    [MSG_TYPES.CHUNK_STARTED]: (payload) => handleChunkStarted(payload, state),
-    [MSG_TYPES.CHUNK_ENDED]:   (payload) => handleChunkEnded(payload, state),
+    [MSG_TYPES.PDF_DETECTED]:    (payload) => handlePdfDetected(payload, state, compat),
+    [MSG_TYPES.ACTION]:          (payload) => handleAction(payload, state, compat),
+    [MSG_TYPES.SPEAK_CHUNK]:     (payload) => handleSpeakChunk(payload, state, compat),
+    [MSG_TYPES.STOP_SPEECH]:     (payload) => handleStopSpeech(payload, state, compat),
+    [MSG_TYPES.CHUNK_STARTED]:   (payload) => handleChunkStarted(payload, state),
+    [MSG_TYPES.CHUNK_ENDED]:     (payload) => handleChunkEnded(payload, state),
+    [MSG_TYPES.PDF_PARSE_START]: (payload) => handlePdfParseStart(payload, state, db),
+    [MSG_TYPES.PARSE_PROGRESS]:  (payload) => handleParseProgress(payload, state),
+    [MSG_TYPES.PDF_PARSED]:      (payload) => handlePdfParsed(payload, state, db),
+    [MSG_TYPES.LOAD_DOCUMENT]:   (payload) => handleLoadDocument(payload, state, db),
   }
 }
 
@@ -163,14 +264,18 @@ export async function startup(compat, stateRef) {
   }, { url: [{ schemes: ['http', 'https'] }] })
 
   // 4. Message router
-  const handlers = buildDispatchTable(stateRef, compat)
+  const handlers = buildDispatchTable(stateRef, compat, db)
   onMessage((msg) => {
+    // Inline dedup check — responds synchronously within the message handler
+    if (msg.payload?.type === 'DEDUP_CHECK') {
+      return handleDedupCheck(msg.payload, db)
+    }
     const handler = handlers[msg.type]
     if (!handler) {
       console.warn('[SW] Unrecognised message type:', msg.type)
       return
     }
-    handler(msg.payload)
+    return handler(msg.payload)
   }, compat)
 
   // 5. Port registry
