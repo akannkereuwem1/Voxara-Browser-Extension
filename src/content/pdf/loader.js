@@ -37,11 +37,27 @@ export async function loadPdf(url, pdfjsLib) {
 
   pdfjsLib.GlobalWorkerOptions.workerSrc = _workerSrc
 
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`PDF_Loader: fetch failed for ${url} — HTTP ${response.status}`)
+  let arrayBuffer
+  if (url.startsWith('file://')) {
+    // fetch() cannot read file:// URLs in content scripts — use XHR instead
+    arrayBuffer = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('GET', url, true)
+      xhr.responseType = 'arraybuffer'
+      xhr.onload = () => {
+        if (xhr.status === 0 || xhr.status === 200) resolve(xhr.response)
+        else reject(new Error(`PDF_Loader: fetch failed for ${url} — HTTP ${xhr.status}`))
+      }
+      xhr.onerror = () => reject(new Error(`PDF_Loader: fetch failed for ${url} — network error`))
+      xhr.send()
+    })
+  } else {
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`PDF_Loader: fetch failed for ${url} — HTTP ${response.status}`)
+    }
+    arrayBuffer = await response.arrayBuffer()
   }
-  const arrayBuffer = await response.arrayBuffer()
 
   let pdf
   try {

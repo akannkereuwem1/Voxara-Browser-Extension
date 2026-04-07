@@ -128,23 +128,48 @@ export async function handleStopSpeech(payload, state, compat) {
 
 export async function handlePdfParseStart(payload, state, db) {
   if (payload.parseStatus === 'failed') {
+    // Update the existing pending record for this URL to failed
+    if (db) {
+      try {
+        const existing = await db.getFromIndex('documents', 'url', payload.url)
+        if (existing && existing.parseStatus === 'pending') {
+          existing.parseStatus = 'failed'
+          await db.put('documents', existing)
+        }
+      } catch (_) { /* index may not exist */ }
+    }
     state.parseStatus = 'failed'
     broadcastState(state, state.connectedPorts)
     return
   }
-  const doc = {
-    id: crypto.randomUUID(),
-    url: payload.url,
-    fileHash: null,
-    title: payload.title ?? null,
-    pageCount: payload.pageCount ?? null,
-    chunkCount: 0,
-    language: 'en',
-    parseStatus: 'pending',
-    createdAt: Date.now(),
-    lastOpenedAt: Date.now(),
-    sizeBytesEstimate: 0,
+
+  // Check if a pending record already exists for this URL — reuse it to avoid duplicates
+  let doc = null
+  if (db) {
+    try {
+      const existing = await db.getFromIndex('documents', 'url', payload.url)
+      if (existing && existing.parseStatus === 'pending') {
+        doc = existing
+      }
+    } catch (_) { /* index may not exist */ }
   }
+
+  if (!doc) {
+    doc = {
+      id: crypto.randomUUID(),
+      url: payload.url,
+      fileHash: null,
+      title: payload.title ?? null,
+      pageCount: payload.pageCount ?? null,
+      chunkCount: 0,
+      language: 'en',
+      parseStatus: 'pending',
+      createdAt: Date.now(),
+      lastOpenedAt: Date.now(),
+      sizeBytesEstimate: 0,
+    }
+  }
+
   if (db) await db.put('documents', doc)
   state.parseStatus = 'pending'
   state.parseProgress = null
