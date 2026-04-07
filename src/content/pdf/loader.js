@@ -8,13 +8,14 @@
  * pdfjs-dist (which requires browser globals like DOMMatrix).
  */
 
-// Default worker URL — resolved at runtime in the real extension context
-let _workerSrc = ''
-try {
-  _workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href
-} catch (_) {
-  // In test environments import.meta.url may not resolve the package path
-}
+// Import the worker URL via Vite's ?url suffix so the hashed asset path is
+// baked in at build time. In extension context this resolves to the correct
+// chrome-extension:// URL automatically via CRXJS.
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+
+// Default worker src — Vite resolves this to the correct hashed asset path.
+// Falls back to empty string in test environments where the ?url import is mocked.
+let _workerSrc = workerUrl ?? ''
 
 /** Override the worker URL (used in tests). */
 export function setWorkerSrc(url) {
