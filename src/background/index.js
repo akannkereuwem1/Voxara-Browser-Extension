@@ -8,7 +8,7 @@ import { initDB } from '../shared/db.js'
 
 export const DEFAULT_APP_STATE = {
   activePdfUrl:      null,
-  playbackStatus:    'idle',
+  playbackStatus:    'idle',   // 'idle' | 'playing' | 'paused' | 'ended'
   currentChunkIndex: 0,
   connectedPorts:    [],
   offscreenOpen:     false,
@@ -16,6 +16,11 @@ export const DEFAULT_APP_STATE = {
   activeDocumentId:  null,
   parseStatus:       'idle',
   parseProgress:     null,
+  // Phase 3 additions
+  playbackRate:      1.0,      // clamped to [0.5, 3.0]
+  pitch:             1.0,      // clamped to [0.5, 2.0]
+  volume:            1.0,      // clamped to [0, 1]
+  voiceId:           null,     // string | null — voiceURI of selected voice
 }
 
 export let appState = { ...DEFAULT_APP_STATE }
@@ -32,6 +37,11 @@ export function serializeState(state) {
     activeDocumentId:  state.activeDocumentId,
     parseStatus:       state.parseStatus,
     parseProgress:     state.parseProgress,
+    // Phase 3 additions
+    playbackRate:      state.playbackRate,
+    pitch:             state.pitch,
+    volume:            state.volume,
+    voiceId:           state.voiceId,
   }
 }
 
@@ -120,6 +130,81 @@ export async function handleStopSpeech(payload, state, compat) {
   await compat.offscreen.close()
     .catch((e) => console.warn('[SW] offscreen.close failed:', e))
   state.offscreenOpen = false
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 handlers — playback controls
+// ---------------------------------------------------------------------------
+
+export function handlePlaybackEnded(payload, state) {
+  state.playbackStatus = 'ended'
+  broadcastState(state, state.connectedPorts)
+}
+
+export function handleSetVoice(payload, state, compat) {
+  state.voiceId = payload.voiceId
+  sendMessage(MSG_TYPES.SET_VOICE, payload, compat)
+  broadcastState(state, state.connectedPorts)
+}
+
+export function handleSetRate(payload, state, compat) {
+  state.playbackRate = Math.min(3.0, Math.max(0.5, payload.rate))
+  sendMessage(MSG_TYPES.SET_RATE, { rate: state.playbackRate }, compat)
+  broadcastState(state, state.connectedPorts)
+}
+
+export function handleSetPitch(payload, state, compat) {
+  state.pitch = Math.min(2.0, Math.max(0.5, payload.pitch))
+  sendMessage(MSG_TYPES.SET_PITCH, { pitch: state.pitch }, compat)
+  broadcastState(state, state.connectedPorts)
+}
+
+export function handleSetVolume(payload, state, compat) {
+  state.volume = Math.min(1.0, Math.max(0.0, payload.volume))
+  sendMessage(MSG_TYPES.SET_VOLUME, { volume: state.volume }, compat)
+  broadcastState(state, state.connectedPorts)
+}
+
+/**
+ * Calculate chunk delta for a time-based skip.
+ * delta = floor(seconds * playbackRate * 150wpm / 60s / avgWordsPerChunk)
+ *
+ * @param {number} seconds
+ * @param {number} playbackRate
+ * @param {number} [avgWordsPerChunk=150]
+ * @returns {number}
+ */
+export function calcChunkDelta(seconds, playbackRate, avgWordsPerChunk = 150) {
+  const wordsPerSecond = (150 * playbackRate) / 60
+  return Math.max(1, Math.floor((seconds * wordsPerSecond) / avgWordsPerChunk))
+}
+
+export async function handleSkipForward(payload, state, compat, db) {
+  const doc = db ? await db.get('documents', state.activeDocumentId) : null
+  const lastIndex = doc ? doc.chunkCount - 1 : state.currentChunkIndex
+  const delta = calcChunkDelta(payload.seconds ?? 10, state.playbackRate)
+  state.currentChunkIndex = Math.min(lastIndex, state.currentChunkIndex + delta)
+  if (state.playbackStatus === 'playing') {
+    sendMessage(MSG_TYPES.SEEK_TO_CHUNK, { chunkIndex: state.currentChunkIndex }, compat)
+  }
+  broadcastState(state, state.connectedPorts)
+}
+
+export async function handleSkipBack(payload, state, compat) {
+  const delta = calcChunkDelta(payload.seconds ?? 10, state.playbackRate)
+  state.currentChunkIndex = Math.max(0, state.currentChunkIndex - delta)
+  if (state.playbackStatus === 'playing') {
+    sendMessage(MSG_TYPES.SEEK_TO_CHUNK, { chunkIndex: state.currentChunkIndex }, compat)
+  }
+  broadcastState(state, state.connectedPorts)
+}
+
+export function handleSeekToChunk(payload, state, compat) {
+  state.currentChunkIndex = payload.chunkIndex
+  if (state.playbackStatus === 'playing') {
+    sendMessage(MSG_TYPES.SEEK_TO_CHUNK, payload, compat)
+  }
+  broadcastState(state, state.connectedPorts)
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +362,15 @@ export function buildDispatchTable(state, compat, db) {
     [MSG_TYPES.DEDUP_CHECK]:     (payload) => handleDedupCheck(payload, db),
     [MSG_TYPES.FETCH_PDF]:       (payload) => handleFetchPdf(payload),
     [MSG_TYPES.PING]:            () => ({ pong: true }),
+    // Phase 3 additions
+    [MSG_TYPES.PLAYBACK_ENDED]:  (payload) => handlePlaybackEnded(payload, state),
+    [MSG_TYPES.SET_VOICE]:       (payload) => handleSetVoice(payload, state, compat),
+    [MSG_TYPES.SET_RATE]:        (payload) => handleSetRate(payload, state, compat),
+    [MSG_TYPES.SET_PITCH]:       (payload) => handleSetPitch(payload, state, compat),
+    [MSG_TYPES.SET_VOLUME]:      (payload) => handleSetVolume(payload, state, compat),
+    [MSG_TYPES.SKIP_FORWARD]:    (payload) => handleSkipForward(payload, state, compat, db),
+    [MSG_TYPES.SKIP_BACK]:       (payload) => handleSkipBack(payload, state, compat),
+    [MSG_TYPES.SEEK_TO_CHUNK]:   (payload) => handleSeekToChunk(payload, state, compat),
   }
 }
 

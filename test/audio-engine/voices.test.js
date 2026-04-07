@@ -6,11 +6,14 @@ import * as fc from 'fast-check'
 import { createVoiceManager } from '../../src/lib/audio/voices.js'
 
 // ---------------------------------------------------------------------------
-// Stub SpeechSynthesisUtterance for Node environment
+// SpeechSynthesisUtterance stub (not available in Node)
 // ---------------------------------------------------------------------------
 
 class FakeUtterance {
-  constructor(text) { this.text = text; this.voice = null }
+  constructor(text) {
+    this.text = text
+    this.voice = null
+  }
 }
 globalThis.SpeechSynthesisUtterance = FakeUtterance
 
@@ -36,8 +39,12 @@ function makeSynth(rawVoices = []) {
     getVoices: vi.fn(() => synth._rawVoices),
     cancel: vi.fn(),
     speak: vi.fn(),
-    addEventListener: vi.fn((event, fn) => { listeners[event] = fn }),
-    _fireVoicesChanged() { listeners['voiceschanged']?.() },
+    addEventListener: vi.fn((event, fn) => {
+      listeners[event] = fn
+    }),
+    _fireVoicesChanged() {
+      listeners['voiceschanged']?.()
+    },
   }
   return synth
 }
@@ -57,9 +64,9 @@ function makeStorage(initial = {}) {
 // ---------------------------------------------------------------------------
 
 describe('Property 2: Voice enumeration exposes required fields', () => {
-  it('property: every enumerated voice has voiceURI, name, lang, localService', async () => {
-    await fc.assert(
-      fc.asyncProperty(
+  it('property: every enumerated voice has voiceURI, name, lang, localService — no extra fields', () => {
+    fc.assert(
+      fc.property(
         fc.array(
           fc.record({
             voiceURI:     fc.string({ minLength: 1 }),
@@ -69,12 +76,14 @@ describe('Property 2: Voice enumeration exposes required fields', () => {
           }),
           { minLength: 1, maxLength: 10 }
         ),
-        async (rawVoices) => {
+        (rawVoices) => {
           const synth = makeSynth(rawVoices)
           const storage = makeStorage()
           const vm = createVoiceManager(synth, storage)
-          // init() calls enumerate() and registers voiceschanged listener
-          await vm.init()
+
+          // Trigger enumerate via voiceschanged after init wires the listener
+          vm.init()
+          synth._fireVoicesChanged()
 
           const voices = vm.getVoices()
           expect(voices.length).toBe(rawVoices.length)
@@ -92,25 +101,26 @@ describe('Property 2: Voice enumeration exposes required fields', () => {
     )
   })
 
-  it('logs a warning and returns empty array when no voices available after voiceschanged', async () => {
+  it('logs a warning and returns empty array when no voices available after voiceschanged', () => {
     const synth = makeSynth([])
     const storage = makeStorage()
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const vm = createVoiceManager(synth, storage)
-    await vm.init()
-    // fire voiceschanged with still-empty list
+
+    vm.init()
     synth._fireVoicesChanged()
+
     expect(vm.getVoices()).toEqual([])
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[VoiceManager]'))
     warnSpy.mockRestore()
   })
 
-  it('re-enumerates on voiceschanged', async () => {
+  it('re-enumerates on voiceschanged', () => {
     const synth = makeSynth([])
     const storage = makeStorage()
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const vm = createVoiceManager(synth, storage)
-    await vm.init()
+
+    vm.init()
     expect(vm.getVoices()).toEqual([])
 
     // Add voices and fire event
@@ -120,7 +130,6 @@ describe('Property 2: Voice enumeration exposes required fields', () => {
 
     expect(vm.getVoices().length).toBe(1)
     expect(vm.getVoices()[0].voiceURI).toBe('urn:voice:new')
-    warnSpy.mockRestore()
   })
 })
 
@@ -183,21 +192,21 @@ describe('Property 3: Voice persistence round-trip', () => {
     warnSpy.mockRestore()
   })
 
-  it('preview cancels any in-progress speech before speaking', async () => {
+  it('preview cancels in-progress speech before speaking the sample', async () => {
     const voice = makeRawVoice({ voiceURI: 'urn:voice:test' })
     const synth = makeSynth([voice])
     const storage = makeStorage()
     const vm = createVoiceManager(synth, storage)
-    await vm.init()
 
     await vm.selectVoice('urn:voice:test')
     vm.preview()
 
     // cancel must be called before speak
-    expect(synth.cancel).toHaveBeenCalled()
-    expect(synth.speak).toHaveBeenCalledOnce()
     const cancelOrder = synth.cancel.mock.invocationCallOrder[0]
     const speakOrder  = synth.speak.mock.invocationCallOrder[0]
     expect(cancelOrder).toBeLessThan(speakOrder)
+    expect(synth.speak).toHaveBeenCalledOnce()
+    const utterance = synth.speak.mock.calls[0][0]
+    expect(utterance).toBeInstanceOf(FakeUtterance)
   })
 })
