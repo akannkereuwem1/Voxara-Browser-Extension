@@ -3,7 +3,7 @@
   "name": "Voxara",
   "version": "0.1.0",
   "description": "Transform PDFs into an interactive audio-first reading experience",
-  "permissions": ["storage", "activeTab", "scripting", "alarms", "<all_urls>"],
+  "permissions": ["storage", "activeTab", "scripting", "alarms", "<all_urls>", "file://*/*"],
   "background": {
     "scripts": ["src/background/index.js"],
     "persistent": false
