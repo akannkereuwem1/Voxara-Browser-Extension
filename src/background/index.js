@@ -215,6 +215,7 @@ export function buildDispatchTable(state, compat, db) {
     [MSG_TYPES.PARSE_PROGRESS]:  (payload) => handleParseProgress(payload, state),
     [MSG_TYPES.PDF_PARSED]:      (payload) => handlePdfParsed(payload, state, db),
     [MSG_TYPES.LOAD_DOCUMENT]:   (payload) => handleLoadDocument(payload, state, db),
+    [MSG_TYPES.DEDUP_CHECK]:     (payload) => handleDedupCheck(payload, db),
   }
 }
 
@@ -266,10 +267,6 @@ export async function startup(compat, stateRef) {
   // 4. Message router
   const handlers = buildDispatchTable(stateRef, compat, db)
   onMessage((msg) => {
-    // Inline dedup check — responds synchronously within the message handler
-    if (msg.payload?.type === 'DEDUP_CHECK') {
-      return handleDedupCheck(msg.payload, db)
-    }
     const handler = handlers[msg.type]
     if (!handler) {
       console.warn('[SW] Unrecognised message type:', msg.type)

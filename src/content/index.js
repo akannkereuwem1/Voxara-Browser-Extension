@@ -75,8 +75,8 @@ export async function parsePdf(url, compat, pdfjsLib) {
 
     // 3. Deduplication check
     const dedupResult = await sendMessage(
-      MSG_TYPES.PDF_PARSE_START,
-      { type: 'DEDUP_CHECK', fileHash },
+      MSG_TYPES.DEDUP_CHECK,
+      { fileHash },
       compat
     )
     if (dedupResult?.duplicate) {

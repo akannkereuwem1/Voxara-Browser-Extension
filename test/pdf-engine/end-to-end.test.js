@@ -72,7 +72,7 @@ describe('PDF Engine end-to-end pipeline', () => {
           sentMessages.push(envelope)
 
           // Respond to dedup check
-          if (envelope.payload?.type === 'DEDUP_CHECK') {
+          if (envelope.type === 'DEDUP_CHECK') {
             return handleDedupCheck(envelope.payload, db)
           }
 
@@ -176,7 +176,7 @@ describe('PDF Engine end-to-end pipeline', () => {
       runtime: {
         sendMessage: async (envelope) => {
           sentMessages.push(envelope)
-          if (envelope.payload?.type === 'DEDUP_CHECK') {
+          if (envelope.type === 'DEDUP_CHECK') {
             return handleDedupCheck(envelope.payload, db)
           }
           if (envelope.type === 'PDF_PARSE_START') {
@@ -252,7 +252,7 @@ describe('PDF Engine end-to-end pipeline', () => {
       runtime: {
         sendMessage: async (envelope) => {
           if (envelope.type === 'PARSE_PROGRESS') progressMessages.push(envelope)
-          if (envelope.payload?.type === 'DEDUP_CHECK') return { duplicate: false }
+          if (envelope.type === 'DEDUP_CHECK') return { duplicate: false }
           if (envelope.type === 'PDF_PARSE_START') await handlePdfParseStart(envelope.payload, state, db)
           if (envelope.type === 'PDF_PARSED') await handlePdfParsed(envelope.payload, state, db)
           return undefined

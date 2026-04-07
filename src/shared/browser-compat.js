@@ -84,7 +84,9 @@ export class BrowserCompat {
               else resolve(response)
             })
           ),
-        onMessage: (handler) => c.runtime.onMessage.addListener(handler),
+        onMessage: (handler) => c.runtime.onMessage.addListener(
+          (msg, sender, sendResponse) => handler(msg, sender, sendResponse)
+        ),
       },
 
       sidePanel: BrowserCompat._buildChromeSidePanelAPI(c),

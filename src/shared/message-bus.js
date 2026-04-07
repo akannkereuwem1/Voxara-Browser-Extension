@@ -34,6 +34,7 @@ export const MSG_TYPES = Object.freeze({
   PARSE_PROGRESS:  'PARSE_PROGRESS',
   PDF_PARSED:      'PDF_PARSED',
   LOAD_DOCUMENT:   'LOAD_DOCUMENT',
+  DEDUP_CHECK:     'DEDUP_CHECK',
 })
 
 // ---------------------------------------------------------------------------
@@ -64,7 +65,7 @@ export async function sendMessage(type, payload, compat) {
  * @param {import('./browser-compat.js').CompatAPI} compat - Unified browser API
  */
 export function onMessage(handler, compat) {
-  const wrappedHandler = (msg) => {
+  const wrappedHandler = (msg, _sender, sendResponse) => {
     const isValid =
       typeof msg.type === 'string' &&
       msg.payload !== null &&
@@ -74,10 +75,28 @@ export function onMessage(handler, compat) {
 
     if (!isValid) {
       console.warn('[MessageBus] Discarded malformed message:', msg)
-      return
+      return false
     }
 
-    handler(msg)
+    const result = handler(msg)
+
+    // If the handler returns a Promise, keep the channel open and send the
+    // resolved value back via sendResponse (required for Chrome MV3).
+    if (result && typeof result.then === 'function') {
+      result.then((value) => {
+        if (value !== undefined) sendResponse(value)
+      }).catch((err) => {
+        console.error('[MessageBus] Handler error:', err)
+        sendResponse(null)
+      })
+      return true // keep message channel open for async response
+    }
+
+    // Synchronous return value
+    if (result !== undefined) {
+      sendResponse(result)
+    }
+    return false
   }
 
   compat.runtime.onMessage(wrappedHandler)
