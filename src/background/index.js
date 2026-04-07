@@ -62,11 +62,31 @@ export function handlePdfDetected(payload, state, _compat) {
   broadcastState(state, state.connectedPorts)
 }
 
-export function handleAction(payload, state, _compat) {
+export async function handleAction(payload, state, _compat, db) {
   if (payload.type === 'PLAY')   state.playbackStatus = 'playing'
   if (payload.type === 'PAUSE')  state.playbackStatus = 'paused'
   if (payload.type === 'RESUME') state.playbackStatus = 'playing'
   if (payload.type === 'STOP')   state.playbackStatus = 'idle'
+
+  if (payload.type === 'DELETE_DOCUMENT' && db) {
+    const { documentId } = payload.data ?? {}
+    if (documentId) {
+      try {
+        const tx = db.transaction(['documents', 'chunks'], 'readwrite')
+        tx.objectStore('documents').delete(documentId)
+        const allChunks = await tx.objectStore('chunks').index('documentId').getAllKeys(documentId)
+        for (const key of allChunks) tx.objectStore('chunks').delete(key)
+        await tx.done
+        if (state.activeDocumentId === documentId) {
+          state.activeDocumentId = null
+          state.parseStatus = 'idle'
+        }
+      } catch (err) {
+        console.error('[SW] DELETE_DOCUMENT failed:', err)
+      }
+    }
+  }
+
   broadcastState(state, state.connectedPorts)
 }
 
@@ -206,7 +226,7 @@ export async function handleDedupCheck(payload, db) {
 export function buildDispatchTable(state, compat, db) {
   return {
     [MSG_TYPES.PDF_DETECTED]:    (payload) => handlePdfDetected(payload, state, compat),
-    [MSG_TYPES.ACTION]:          (payload) => handleAction(payload, state, compat),
+    [MSG_TYPES.ACTION]:          (payload) => handleAction(payload, state, compat, db),
     [MSG_TYPES.SPEAK_CHUNK]:     (payload) => handleSpeakChunk(payload, state, compat),
     [MSG_TYPES.STOP_SPEECH]:     (payload) => handleStopSpeech(payload, state, compat),
     [MSG_TYPES.CHUNK_STARTED]:   (payload) => handleChunkStarted(payload, state),

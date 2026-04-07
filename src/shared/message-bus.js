@@ -66,6 +66,8 @@ export async function sendMessage(type, payload, compat) {
  */
 export function onMessage(handler, compat) {
   const wrappedHandler = (msg, _sender, sendResponse) => {
+    const respond = typeof sendResponse === 'function' ? sendResponse : () => {}
+
     const isValid =
       typeof msg.type === 'string' &&
       msg.payload !== null &&
@@ -84,18 +86,16 @@ export function onMessage(handler, compat) {
     // resolved value back via sendResponse (required for Chrome MV3).
     if (result && typeof result.then === 'function') {
       result.then((value) => {
-        if (value !== undefined) sendResponse(value)
+        respond(value !== undefined ? value : null)
       }).catch((err) => {
         console.error('[MessageBus] Handler error:', err)
-        sendResponse(null)
+        respond(null)
       })
       return true // keep message channel open for async response
     }
 
-    // Synchronous return value
-    if (result !== undefined) {
-      sendResponse(result)
-    }
+    // Synchronous return value — always respond to close the channel cleanly
+    respond(result !== undefined ? result : null)
     return false
   }
 
