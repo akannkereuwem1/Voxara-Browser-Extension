@@ -248,19 +248,11 @@ export async function ensureOffscreen(state, compat) {
       state.offscreenOpen = false
       return false
     }
+    // Give the offscreen document time to load and register its message listener.
+    // chrome.runtime.sendMessage does not route SW→offscreen, so PING won't work.
+    await new Promise((r) => setTimeout(r, 600))
   }
-
-  // Wait for the offscreen document to register its message listener.
-  // Poll with PING until it responds, up to 2 seconds.
-  for (let i = 0; i < 20; i++) {
-    try {
-      const res = await sendMessage(MSG_TYPES.PING, {}, compat)
-      if (res?.pong) return true
-    } catch (_) { /* not ready yet */ }
-    await new Promise((r) => setTimeout(r, 100))
-  }
-
-  return false
+  return true
 }
 
 export async function handleSpeakChunk(payload, state, compat) {
