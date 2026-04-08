@@ -83,11 +83,12 @@ export async function handleAction(payload, state, compat, db) {
       pitch:           state.pitch,
       volume:          state.volume,
       voiceId:         state.voiceId,
-    }, compat)
+    }, compat).catch((e) => console.warn('[SW] SPEAK_CHUNK delivery failed:', e))
   }
   if (payload.type === 'PAUSE') {
     state.playbackStatus = 'paused'
     sendMessage(MSG_TYPES.STOP_SPEECH, {}, compat)
+      .catch((e) => console.warn('[SW] STOP_SPEECH delivery failed:', e))
   }
   if (payload.type === 'RESUME') state.playbackStatus = 'playing'
   if (payload.type === 'STOP')   state.playbackStatus = 'idle'
@@ -153,6 +154,16 @@ export async function ensureOffscreen(state, compat) {
     justification: 'Web Speech API host for TTS',
   }).catch((e) => console.warn('[SW] offscreen.create failed:', e))
   state.offscreenOpen = true
+
+  // Wait for the offscreen document to register its message listener.
+  // Poll with PING until it responds, up to 2 seconds.
+  for (let i = 0; i < 20; i++) {
+    try {
+      const res = await sendMessage(MSG_TYPES.PING, {}, compat)
+      if (res?.pong) break
+    } catch (_) { /* not ready yet */ }
+    await new Promise((r) => setTimeout(r, 100))
+  }
 }
 
 export async function handleSpeakChunk(payload, state, compat) {

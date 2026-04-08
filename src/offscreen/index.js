@@ -155,6 +155,7 @@ export function registerHandlers(compat, synth, db, initialSettings = {}) {
   const bm = createBufferManager(synth, db, send, initialSettings)
 
   onMessage((msg) => {
+    if (msg.type === MSG_TYPES.PING)        return { pong: true }
     if (msg.type === MSG_TYPES.SPEAK_CHUNK)   return bm.handleSpeakChunk(msg.payload)
     if (msg.type === MSG_TYPES.STOP_SPEECH)   return bm.handleStopSpeech()
     if (msg.type === MSG_TYPES.SEEK_TO_CHUNK) return bm.handleSeekToChunk(msg.payload)
@@ -170,8 +171,10 @@ export function registerHandlers(compat, synth, db, initialSettings = {}) {
 // ---------------------------------------------------------------------------
 
 if (typeof chrome !== 'undefined' || typeof browser !== 'undefined') {
-  const compat = BrowserCompat.init()
-  // db and initialSettings are wired at runtime via the Service Worker SPEAK_CHUNK payload
-  // For now bootstrap with null db — the Buffer Manager will receive db via handleSpeakChunk
-  registerHandlers(compat, window.speechSynthesis, null, {})
+  ;(async () => {
+    const compat = BrowserCompat.init()
+    const { initDB } = await import('../shared/db.js')
+    const db = await initDB()
+    registerHandlers(compat, window.speechSynthesis, db, {})
+  })()
 }
