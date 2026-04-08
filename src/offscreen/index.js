@@ -1,5 +1,6 @@
 import { BrowserCompat } from '../shared/browser-compat.js'
 import { MSG_TYPES, onMessage, sendMessage } from '../shared/message-bus.js'
+import { initDB } from '../shared/db.js'
 
 // ---------------------------------------------------------------------------
 // Web Speech API availability check
@@ -91,12 +92,28 @@ export function createBufferManager(synth, db, send, settings) {
     documentId = payload.documentId
     const startIndex = payload.startChunkIndex ?? 0
 
+    if (!documentId) {
+      console.warn('[Offscreen] SPEAK_CHUNK ignored: missing documentId')
+      send(MSG_TYPES.PLAYBACK_ENDED, {})
+      return
+    }
+
     // Load total chunk count for refill calculations
     const doc = await db.get('documents', documentId)
     totalChunks = doc?.chunkCount ?? 0
 
+    if (totalChunks <= 0) {
+      console.warn('[Offscreen] SPEAK_CHUNK ignored: document has zero chunks')
+      send(MSG_TYPES.PLAYBACK_ENDED, {})
+      return
+    }
+
     // Load first chunk immediately and speak before loading lookahead
     const first = await loadChunks(documentId, startIndex, 1)
+    if (!first.length) {
+      send(MSG_TYPES.PLAYBACK_ENDED, {})
+      return
+    }
     queue = first
     currentIndex = startIndex
     speakNext()
@@ -173,7 +190,6 @@ export function registerHandlers(compat, synth, db, initialSettings = {}) {
 if (typeof chrome !== 'undefined' || typeof browser !== 'undefined') {
   ;(async () => {
     const compat = BrowserCompat.init()
-    const { initDB } = await import('../shared/db.js')
     const db = await initDB()
     registerHandlers(compat, window.speechSynthesis, db, {})
   })()

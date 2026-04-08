@@ -1,6 +1,10 @@
 import { BrowserCompat } from '../shared/browser-compat.js'
 import { MSG_TYPES, sendMessage, onMessage } from '../shared/message-bus.js'
 import { initDB } from '../shared/db.js'
+import { loadPdf } from '../content/pdf/loader.js'
+import { extractText } from '../content/pdf/extractor.js'
+import { chunkPages } from '../content/pdf/chunker.js'
+import { hashArrayBuffer } from '../shared/hash.js'
 
 // ---------------------------------------------------------------------------
 // AppState
@@ -24,6 +28,7 @@ export const DEFAULT_APP_STATE = {
 }
 
 export let appState = { ...DEFAULT_APP_STATE }
+const parsingUrls = new Set()
 
 // ---------------------------------------------------------------------------
 // Serialise state for broadcast (omit runtime-only fields)
@@ -74,8 +79,36 @@ export function handlePdfDetected(payload, state, _compat) {
 
 export async function handleAction(payload, state, compat, db) {
   if (payload.type === 'PLAY') {
+    if (!state.activeDocumentId && state.activePdfUrl && db) {
+      await parsePdfForPlayback(state.activePdfUrl, state, db, compat)
+    }
+
+    if (!state.activeDocumentId) {
+      console.warn('[SW] PLAY ignored: no activeDocumentId (PDF not parsed/loaded yet)')
+      state.playbackStatus = 'idle'
+      broadcastState(state, state.connectedPorts)
+      return
+    }
+
+    if (db) {
+      const doc = await db.get('documents', state.activeDocumentId)
+      if (!doc || !doc.chunkCount) {
+        console.warn('[SW] PLAY ignored: active document has no playable chunks')
+        state.playbackStatus = 'idle'
+        broadcastState(state, state.connectedPorts)
+        return
+      }
+    }
+
     state.playbackStatus = 'playing'
-    await ensureOffscreen(state, compat)
+    const ready = await ensureOffscreen(state, compat)
+    if (!ready) {
+      console.warn('[SW] PLAY aborted: offscreen document did not become ready')
+      state.playbackStatus = 'idle'
+      broadcastState(state, state.connectedPorts)
+      return
+    }
+
     sendMessage(MSG_TYPES.SPEAK_CHUNK, {
       documentId:      state.activeDocumentId,
       startChunkIndex: state.currentChunkIndex,
@@ -116,6 +149,61 @@ export async function handleAction(payload, state, compat, db) {
   broadcastState(state, state.connectedPorts)
 }
 
+export async function parsePdfForPlayback(url, state, db, compat) {
+  if (!url || !db) return
+  if (parsingUrls.has(url)) return
+  parsingUrls.add(url)
+
+  try {
+    await handlePdfParseStart({ url, title: null, pageCount: null }, state, db)
+
+    const { arrayBuffer, pdf } = await loadPdf(url, undefined, compat)
+    const fileHash = await hashArrayBuffer(arrayBuffer)
+    const dedupResult = await handleDedupCheck({ fileHash }, db)
+    if (dedupResult?.duplicate) {
+      await handleLoadDocument({ documentId: dedupResult.documentId }, state, db)
+      return
+    }
+
+    const meta = await pdf.getMetadata().catch(() => ({}))
+    const title =
+      meta?.info?.Title?.trim() ||
+      url.split('/').pop()?.replace(/\.pdf$/i, '') ||
+      'Untitled'
+    const language = meta?.info?.Language || 'en'
+
+    const pages = await extractText(pdf)
+    for (let i = 0; i < pages.length; i++) {
+      const pageNum = i + 1
+      if (pageNum % 10 === 0) {
+        handleParseProgress(
+          { url, pagesProcessed: pageNum, totalPages: pdf.numPages },
+          state
+        )
+      }
+    }
+
+    const documentId = crypto.randomUUID()
+    const chunks = chunkPages(pages, documentId)
+    await handlePdfParsed(
+      {
+        url,
+        fileHash,
+        title,
+        pageCount: pdf.numPages,
+        language,
+        chunks,
+      },
+      state,
+      db
+    )
+  } catch (err) {
+    await handlePdfParseStart({ url, parseStatus: 'failed', error: err.message }, state, db)
+  } finally {
+    parsingUrls.delete(url)
+  }
+}
+
 export function handleChunkStarted(payload, state) {
   state.currentChunkIndex = payload.chunkIndex
   broadcastState(state, state.connectedPorts)
@@ -147,27 +235,40 @@ export async function handleChunkEnded(payload, state, db) {
 }
 
 export async function ensureOffscreen(state, compat) {
-  if (state.offscreenOpen) return
-  await compat.offscreen.create({
-    url: 'src/offscreen/index.html',
-    reasons: ['AUDIO_PLAYBACK'],
-    justification: 'Web Speech API host for TTS',
-  }).catch((e) => console.warn('[SW] offscreen.create failed:', e))
-  state.offscreenOpen = true
+  if (!state.offscreenOpen) {
+    try {
+      await compat.offscreen.create({
+        url: 'src/offscreen/index.html',
+        reasons: ['AUDIO_PLAYBACK'],
+        justification: 'Web Speech API host for TTS',
+      })
+      state.offscreenOpen = true
+    } catch (e) {
+      console.warn('[SW] offscreen.create failed:', e)
+      state.offscreenOpen = false
+      return false
+    }
+  }
 
   // Wait for the offscreen document to register its message listener.
   // Poll with PING until it responds, up to 2 seconds.
   for (let i = 0; i < 20; i++) {
     try {
       const res = await sendMessage(MSG_TYPES.PING, {}, compat)
-      if (res?.pong) break
+      if (res?.pong) return true
     } catch (_) { /* not ready yet */ }
     await new Promise((r) => setTimeout(r, 100))
   }
+
+  return false
 }
 
 export async function handleSpeakChunk(payload, state, compat) {
-  await ensureOffscreen(state, compat)
+  const ready = await ensureOffscreen(state, compat)
+  if (!ready) {
+    console.warn('[SW] SPEAK_CHUNK dropped: offscreen document not ready')
+    return
+  }
   sendMessage(MSG_TYPES.SPEAK_CHUNK, payload, compat)
 }
 

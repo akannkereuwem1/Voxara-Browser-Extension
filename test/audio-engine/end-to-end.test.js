@@ -47,7 +47,13 @@ function makeState(overrides = {}) {
 
 function makeCompat() {
   return {
-    runtime: { sendMessage: vi.fn(() => Promise.resolve()), onMessage: vi.fn() },
+    runtime: {
+      sendMessage: vi.fn((msg) => {
+        if (msg?.type === MSG_TYPES.PING) return Promise.resolve({ pong: true })
+        return Promise.resolve(null)
+      }),
+      onMessage: vi.fn(),
+    },
     offscreen: { create: vi.fn(() => Promise.resolve()), close: vi.fn(() => Promise.resolve()) },
     webNavigation: { addListener: vi.fn() },
     ports: { onConnect: vi.fn() },
