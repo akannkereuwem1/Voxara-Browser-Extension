@@ -40,6 +40,7 @@ export async function loadPdf(url, pdfjsLib, compat) {
 
   let arrayBuffer
 
+  /* global XMLHttpRequest, fetch */
   if (url.startsWith('file://') && compat) {
     // file:// URLs cannot be fetched from a content script context —
     // delegate to the service worker which has the necessary permissions.

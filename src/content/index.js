@@ -69,7 +69,7 @@ export async function parsePdf(url, compat, pdfjsLib) {
   // The backoff retry in browser-compat handles the wake-up race transparently.
   try {
     await sendMessage(MSG_TYPES.PING, {}, compat)
-  } catch (_) { /* SW may already be awake — ignore ping failures */ }
+  } catch { /* SW may already be awake — ignore ping failures */ }
 
   // 1. Notify service worker that parsing has started
   await sendMessage(MSG_TYPES.PDF_PARSE_START, { url, title: null, pageCount: null }, compat)

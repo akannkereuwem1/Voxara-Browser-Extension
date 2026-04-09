@@ -488,7 +488,7 @@ export async function handlePdfParseStart(payload, state, db) {
           existing.parseStatus = 'failed'
           await db.put('documents', existing)
         }
-      } catch (_) { /* index may not exist */ }
+      } catch { /* index may not exist */ }
     }
     state.parseStatus = 'failed'
     broadcastState(state, state.connectedPorts)
@@ -503,7 +503,7 @@ export async function handlePdfParseStart(payload, state, db) {
       if (existing && existing.parseStatus === 'pending') {
         doc = existing
       }
-    } catch (_) { /* index may not exist */ }
+    } catch { /* index may not exist */ }
   }
 
   if (!doc) {
@@ -592,12 +592,13 @@ export async function handleDedupCheck(payload, db) {
     if (existing && existing.parseStatus === 'complete') {
       return { duplicate: true, documentId: existing.id }
     }
-  } catch (_) { /* index may not exist yet */ }
+  } catch { /* index may not exist yet */ }
   return { duplicate: false }
 }
 
 export async function handleFetchPdf(payload) {
   try {
+    /* global fetch */
     const response = await fetch(payload.url)
     if (!response.ok) {
       return { error: `HTTP ${response.status}` }
