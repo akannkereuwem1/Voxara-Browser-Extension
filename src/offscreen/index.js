@@ -212,7 +212,12 @@ export function registerHandlers(compat, synth, db, initialSettings = {}) {
 if (typeof chrome !== 'undefined' || typeof browser !== 'undefined') {
   ;(async () => {
     const compat = BrowserCompat.init()
-    const db = await initDB()
+    let db = null
+    try {
+      db = await initDB()
+    } catch (err) {
+      console.warn('[Offscreen] initDB failed:', err)
+    }
     registerHandlers(compat, window.speechSynthesis, db, {})
   })()
 }

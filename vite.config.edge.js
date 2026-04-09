@@ -7,5 +7,13 @@ const manifest = require('./manifests/manifest.edge.json')
 
 export default defineConfig({
   plugins: [crx({ manifest })],
-  build: { outDir: 'dist/edge-mv3', sourcemap: true }
+  build: { 
+    outDir: 'dist/edge-mv3', 
+    sourcemap: true,
+    rollupOptions: {
+      input: {
+        offscreen: 'src/offscreen/index.html'
+      }
+    }
+  }
 })

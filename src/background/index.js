@@ -249,25 +249,44 @@ export async function handleChunkEnded(payload, state, db) {
 }
 
 export async function ensureOffscreen(state, compat) {
-  if (!state.offscreenOpen) {
-    try {
-      await compat.offscreen.create({
-        url: 'src/offscreen/index.html',
-        reasons: ['AUDIO_PLAYBACK'],
-        justification: 'Web Speech API host for TTS',
-      })
-      state.offscreenOpen = true
-    } catch (e) {
-      console.warn('[SW] offscreen.create failed:', e)
-      state.offscreenOpen = false
-      return false
+  let actuallyOpen = false;
+  try {
+    if (compat.offscreen && compat.offscreen.hasDocument) {
+      actuallyOpen = await compat.offscreen.hasDocument();
+    } else {
+      actuallyOpen = state.offscreenOpen;
     }
-    // Give the offscreen document time to load and register its message listener.
-    // chrome.runtime.sendMessage does not route SW→offscreen, so PING won't work.
-    /* global process */
-    const delay = (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') ? 0 : 600
-    await new Promise((r) => setTimeout(r, delay))
+  } catch (e) {
+    actuallyOpen = state.offscreenOpen;
   }
+
+  if (actuallyOpen) {
+    state.offscreenOpen = true;
+    return true;
+  }
+
+  try {
+    await compat.offscreen.create({
+      url: 'src/offscreen/index.html',
+      reasons: ['AUDIO_PLAYBACK'],
+      justification: 'Web Speech API host for TTS',
+    })
+    state.offscreenOpen = true
+  } catch (e) {
+    if (e.message && e.message.includes('Only a single offscreen document may be created')) {
+      state.offscreenOpen = true;
+      return true;
+    }
+    console.warn('[SW] offscreen.create failed:', e)
+    state.offscreenOpen = false
+    return false
+  }
+  // Give the offscreen document time to load and register its message listener.
+  // chrome.runtime.sendMessage does not route SW→offscreen, so PING won't work.
+  /* global process */
+  const delay = (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') ? 0 : 600
+  await new Promise((r) => setTimeout(r, delay))
+
   return true
 }
 

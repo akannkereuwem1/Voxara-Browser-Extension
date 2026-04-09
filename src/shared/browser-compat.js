@@ -151,6 +151,7 @@ export class BrowserCompat {
       return {
         create: (params) => c.offscreen.createDocument(params),
         close: () => c.offscreen.closeDocument(),
+        hasDocument: () => c.offscreen.hasDocument ? c.offscreen.hasDocument() : Promise.resolve(false),
       }
     }
     return BrowserCompat._noopOffscreenAPI('chrome')
@@ -253,6 +254,7 @@ export class BrowserCompat {
         console.warn(`[BrowserCompat] offscreen.close not available in ${browser}`)
         return Promise.resolve()
       },
+      hasDocument: () => Promise.resolve(false),
     }
   }
 }
