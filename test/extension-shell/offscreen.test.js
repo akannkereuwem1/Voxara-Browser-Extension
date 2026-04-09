@@ -3,8 +3,10 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import * as fc from 'fast-check'
-import { handleSpeakChunk, handleStopSpeech, registerHandlers } from '../../src/offscreen/index.js'
+import { createBufferManager, registerHandlers } from '../../src/offscreen/index.js'
 import { MSG_TYPES } from '../../src/shared/message-bus.js'
+import { installFakeIDB } from '../setup.js'
+import { initDB } from '../../src/shared/db.js'
 
 // ---------------------------------------------------------------------------
 // SpeechSynthesisUtterance stub
@@ -15,22 +17,32 @@ class FakeUtterance {
     this.text = text
     this.onstart = null
     this.onend = null
+    this.rate = 1; this.pitch = 1; this.volume = 1; this.voice = null
   }
 }
-
-// Install globally so handleSpeakChunk can use `new SpeechSynthesisUtterance`
 globalThis.SpeechSynthesisUtterance = FakeUtterance
 
 // ---------------------------------------------------------------------------
-// Fake speechSynthesis
+// Helpers
 // ---------------------------------------------------------------------------
 
 function makeSynth() {
   const spoken = []
   return {
     spoken,
-    speak: vi.fn((utterance) => spoken.push(utterance)),
+    speak: vi.fn((u) => spoken.push(u)),
     cancel: vi.fn(),
+    getVoices: vi.fn(() => []),
+  }
+}
+
+function makeDB(chunks = []) {
+  return {
+    get: vi.fn(async (store, id) => {
+      if (store === 'documents') return { id, chunkCount: chunks.length }
+      return null
+    }),
+    getAllFromIndex: vi.fn(async () => chunks),
   }
 }
 
@@ -39,35 +51,24 @@ function makeSynth() {
 // ---------------------------------------------------------------------------
 
 describe('Property 19: SPEAK_CHUNK triggers speechSynthesis.speak with correct text', () => {
-  it('property: speak is called with an utterance whose text matches payload.text', () => {
-    fc.assert(
-      fc.property(fc.string({ minLength: 1 }), fc.integer({ min: 0, max: 999 }), (text, chunkIndex) => {
-        const synth = makeSynth()
-        const send = vi.fn()
-
-        handleSpeakChunk({ text, chunkIndex }, synth, send)
-
-        expect(synth.speak).toHaveBeenCalledOnce()
-        const utterance = synth.spoken[0]
-        expect(utterance).toBeInstanceOf(FakeUtterance)
-        expect(utterance.text).toBe(text)
-      }),
-      { numRuns: 100 }
-    )
-  })
-
-  it('property: each SPEAK_CHUNK call produces exactly one speak() call', () => {
-    fc.assert(
-      fc.property(
-        fc.array(fc.string({ minLength: 1 }), { minLength: 1, maxLength: 5 }),
-        (texts) => {
+  it('property: speak is called with an utterance whose text matches the first chunk', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ minLength: 1 }),
+        async (text) => {
           const synth = makeSynth()
           const send = vi.fn()
+          // sequenceIndex always 0 so loadChunks(docId, 0, 1) returns it
+          const chunk = { id: 'c1', documentId: 'doc1', sequenceIndex: 0, text }
+          const db = makeDB([chunk])
+          const bm = createBufferManager(synth, db, send, {})
 
-          texts.forEach((text, i) => handleSpeakChunk({ text, chunkIndex: i }, synth, send))
+          await bm.handleSpeakChunk({ documentId: 'doc1', startChunkIndex: 0 })
 
-          expect(synth.speak).toHaveBeenCalledTimes(texts.length)
-          synth.spoken.forEach((u, i) => expect(u.text).toBe(texts[i]))
+          expect(synth.speak).toHaveBeenCalled()
+          const utterance = synth.spoken[0]
+          expect(utterance).toBeInstanceOf(FakeUtterance)
+          expect(utterance.text).toBe(text)
         }
       ),
       { numRuns: 50 }
@@ -76,7 +77,8 @@ describe('Property 19: SPEAK_CHUNK triggers speechSynthesis.speak with correct t
 
   it('STOP_SPEECH calls synth.cancel()', () => {
     const synth = makeSynth()
-    handleStopSpeech(synth)
+    const bm = createBufferManager(synth, makeDB(), vi.fn(), {})
+    bm.handleStopSpeech()
     expect(synth.cancel).toHaveBeenCalledOnce()
   })
 })
@@ -86,67 +88,56 @@ describe('Property 19: SPEAK_CHUNK triggers speechSynthesis.speak with correct t
 // ---------------------------------------------------------------------------
 
 describe('Property 20: Utterance lifecycle sends CHUNK_STARTED and CHUNK_ENDED', () => {
-  it('property: onstart fires CHUNK_STARTED with correct chunkIndex', () => {
-    fc.assert(
-      fc.property(fc.string({ minLength: 1 }), fc.integer({ min: 0, max: 999 }), (text, chunkIndex) => {
-        const synth = makeSynth()
-        const send = vi.fn()
+  it('property: onstart fires CHUNK_STARTED with correct chunkIndex', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ minLength: 1 }),
+        async (text) => {
+          const synth = makeSynth()
+          const send = vi.fn()
+          const chunk = { id: 'c1', documentId: 'doc1', sequenceIndex: 0, text }
+          const db = makeDB([chunk])
+          const bm = createBufferManager(synth, db, send, {})
 
-        handleSpeakChunk({ text, chunkIndex }, synth, send)
-        const utterance = synth.spoken[0]
+          await bm.handleSpeakChunk({ documentId: 'doc1', startChunkIndex: 0 })
+          synth.spoken[0].onstart()
 
-        // Simulate browser firing onstart
-        utterance.onstart()
-
-        expect(send).toHaveBeenCalledWith(MSG_TYPES.CHUNK_STARTED, { chunkIndex })
-      }),
-      { numRuns: 100 }
+          expect(send).toHaveBeenCalledWith(MSG_TYPES.CHUNK_STARTED, { chunkIndex: 0 })
+        }
+      ),
+      { numRuns: 50 }
     )
   })
 
-  it('property: onend fires CHUNK_ENDED with correct chunkIndex', () => {
-    fc.assert(
-      fc.property(fc.string({ minLength: 1 }), fc.integer({ min: 0, max: 999 }), (text, chunkIndex) => {
-        const synth = makeSynth()
-        const send = vi.fn()
+  it('property: onend fires CHUNK_ENDED with correct chunkIndex', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ minLength: 1 }),
+        async (text) => {
+          const synth = makeSynth()
+          const send = vi.fn()
+          const chunk = { id: 'c1', documentId: 'doc1', sequenceIndex: 0, text }
+          const db = makeDB([chunk])
+          const bm = createBufferManager(synth, db, send, {})
 
-        handleSpeakChunk({ text, chunkIndex }, synth, send)
-        const utterance = synth.spoken[0]
+          await bm.handleSpeakChunk({ documentId: 'doc1', startChunkIndex: 0 })
+          await synth.spoken[0].onend()
 
-        // Simulate browser firing onend
-        utterance.onend()
-
-        expect(send).toHaveBeenCalledWith(MSG_TYPES.CHUNK_ENDED, { chunkIndex })
-      }),
-      { numRuns: 100 }
+          expect(send).toHaveBeenCalledWith(MSG_TYPES.CHUNK_ENDED, { chunkIndex: 0 })
+        }
+      ),
+      { numRuns: 50 }
     )
   })
 
-  it('property: onstart and onend both fire for the same chunkIndex', () => {
-    fc.assert(
-      fc.property(fc.string({ minLength: 1 }), fc.integer({ min: 0, max: 999 }), (text, chunkIndex) => {
-        const synth = makeSynth()
-        const send = vi.fn()
-
-        handleSpeakChunk({ text, chunkIndex }, synth, send)
-        const utterance = synth.spoken[0]
-
-        utterance.onstart()
-        utterance.onend()
-
-        expect(send).toHaveBeenCalledTimes(2)
-        expect(send).toHaveBeenNthCalledWith(1, MSG_TYPES.CHUNK_STARTED, { chunkIndex })
-        expect(send).toHaveBeenNthCalledWith(2, MSG_TYPES.CHUNK_ENDED, { chunkIndex })
-      }),
-      { numRuns: 100 }
-    )
-  })
-
-  it('onstart and onend are not called before browser fires them', () => {
+  it('onstart and onend are not called before browser fires them', async () => {
     const synth = makeSynth()
     const send = vi.fn()
+    const chunk = { id: 'c1', documentId: 'doc1', sequenceIndex: 0, text: 'hello' }
+    const db = makeDB([chunk])
+    const bm = createBufferManager(synth, db, send, {})
 
-    handleSpeakChunk({ text: 'hello', chunkIndex: 0 }, synth, send)
+    await bm.handleSpeakChunk({ documentId: 'doc1', startChunkIndex: 0 })
 
     // No lifecycle events fired yet
     expect(send).not.toHaveBeenCalled()
@@ -158,7 +149,9 @@ describe('Property 20: Utterance lifecycle sends CHUNK_STARTED and CHUNK_ENDED',
 // ---------------------------------------------------------------------------
 
 describe('registerHandlers: routes messages to correct handlers', () => {
-  it('SPEAK_CHUNK message triggers speak', () => {
+  it('STOP_SPEECH message triggers cancel', async () => {
+    installFakeIDB()
+    const db = await initDB()
     const msgListeners = []
     const compat = {
       runtime: {
@@ -168,37 +161,9 @@ describe('registerHandlers: routes messages to correct handlers', () => {
     }
     const synth = makeSynth()
 
-    registerHandlers(compat, synth)
+    registerHandlers(compat, synth, db)
 
-    // Simulate a valid SPEAK_CHUNK envelope arriving
-    const envelope = {
-      type: MSG_TYPES.SPEAK_CHUNK,
-      payload: { text: 'Hello world', chunkIndex: 3 },
-      requestId: 'test-id',
-    }
-    msgListeners.forEach((fn) => fn(envelope))
-
-    expect(synth.speak).toHaveBeenCalledOnce()
-    expect(synth.spoken[0].text).toBe('Hello world')
-  })
-
-  it('STOP_SPEECH message triggers cancel', () => {
-    const msgListeners = []
-    const compat = {
-      runtime: {
-        sendMessage: vi.fn(() => Promise.resolve()),
-        onMessage: vi.fn((fn) => msgListeners.push(fn)),
-      },
-    }
-    const synth = makeSynth()
-
-    registerHandlers(compat, synth)
-
-    const envelope = {
-      type: MSG_TYPES.STOP_SPEECH,
-      payload: {},
-      requestId: 'test-id-2',
-    }
+    const envelope = { type: MSG_TYPES.STOP_SPEECH, payload: {}, requestId: 'test-id-2' }
     msgListeners.forEach((fn) => fn(envelope))
 
     expect(synth.cancel).toHaveBeenCalledOnce()

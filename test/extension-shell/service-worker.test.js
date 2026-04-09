@@ -68,7 +68,10 @@ function makeCompat() {
       close: vi.fn(() => Promise.resolve()),
     },
     runtime: {
-      sendMessage: vi.fn(() => Promise.resolve()),
+      sendMessage: vi.fn((msg) => {
+        if (msg?.type === MSG_TYPES.PING) return Promise.resolve({ pong: true })
+        return Promise.resolve(null)
+      }),
       onMessage(handler) { msgListener = handler },
     },
     // Test helpers to fire events
@@ -267,23 +270,23 @@ describe('Property 7: ACTION message updates AppState and broadcasts', () => {
   ]
 
   for (const { type, expected } of actionMap) {
-    it(`ACTION ${type} sets playbackStatus to ${expected}`, () => {
-      const state = makeState()
+    it(`ACTION ${type} sets playbackStatus to ${expected}`, async () => {
+      const state = makeState(type === 'PLAY' ? { activeDocumentId: 'doc1' } : {})
       const port = makePort()
       state.connectedPorts = [port]
-      handleAction({ type }, state, null)
+      await handleAction({ type }, state, makeCompat())
       expect(state.playbackStatus).toBe(expected)
       expect(port.messages[0]?.type).toBe(MSG_TYPES.STATE_UPDATE)
     })
   }
 
-  it('property: any recognised action broadcasts STATE_UPDATE', () => {
-    fc.assert(
-      fc.property(fc.constantFrom('PLAY', 'PAUSE', 'RESUME', 'STOP'), (type) => {
-        const state = makeState()
+  it('property: any recognised action broadcasts STATE_UPDATE', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.constantFrom('PLAY', 'PAUSE', 'RESUME', 'STOP'), async (type) => {
+        const state = makeState(type === 'PLAY' ? { activeDocumentId: 'doc1' } : {})
         const port = makePort()
         state.connectedPorts = [port]
-        handleAction({ type }, state, null)
+        await handleAction({ type }, state, makeCompat())
         return port.messages.length > 0 && port.messages[0].type === MSG_TYPES.STATE_UPDATE
       }),
       { numRuns: 100 }

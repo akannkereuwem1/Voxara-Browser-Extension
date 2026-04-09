@@ -27,6 +27,91 @@ export function renderState(state, document) {
   if (urlEl) urlEl.textContent = state.activePdfUrl ?? 'No PDF detected'
   if (statusEl) statusEl.textContent = state.playbackStatus ?? 'idle'
   renderProgress(state, document)
+  renderPlayer(state, document)
+}
+
+// ---------------------------------------------------------------------------
+// Player UI rendering — Phase 3
+// ---------------------------------------------------------------------------
+
+export function renderPlayer(state, document) {
+  const playPauseBtn = document.getElementById('play-pause-btn')
+  const scrubber     = document.getElementById('scrubber')
+  const speedSelect  = document.getElementById('speed-select')
+  const pitchSlider  = document.getElementById('pitch-slider')
+  const volumeSlider = document.getElementById('volume-slider')
+  const voiceSelect  = document.getElementById('voice-select')
+
+  if (playPauseBtn) {
+    const label = state.playbackStatus === 'playing' ? 'Pause' : 'Play'
+    playPauseBtn.setAttribute('aria-label', label)
+  }
+
+  if (scrubber) {
+    const hasDoc = !!state.activeDocumentId
+    scrubber.disabled = !hasDoc
+    if (typeof state.currentChunkIndex === 'number') {
+      scrubber.value = state.currentChunkIndex
+    }
+    // aria-valuetext updated by initPlayerControls on change; set initial here
+    const total = parseInt(scrubber.max, 10) + 1 || 1
+    scrubber.setAttribute(
+      'aria-valuetext',
+      `Chunk ${(state.currentChunkIndex ?? 0) + 1} of ${total}`
+    )
+  }
+
+  if (speedSelect && typeof state.playbackRate === 'number') {
+    speedSelect.value = String(state.playbackRate)
+  }
+  if (pitchSlider && typeof state.pitch === 'number') {
+    pitchSlider.value = state.pitch
+  }
+  if (volumeSlider && typeof state.volume === 'number') {
+    volumeSlider.value = state.volume
+  }
+  if (voiceSelect && state.voiceId != null) {
+    voiceSelect.value = state.voiceId
+  }
+}
+
+export function renderVoiceSelector(voices, selectedVoiceURI, document) {
+  const select = document.getElementById('voice-select')
+  if (!select) return
+
+  select.innerHTML = ''
+
+  if (!voices || voices.length === 0) {
+    select.disabled = true
+    const opt = document.createElement('option')
+    opt.textContent = 'No voices available'
+    opt.disabled = true
+    select.appendChild(opt)
+    return
+  }
+
+  select.disabled = false
+
+  // Group by lang
+  const byLang = {}
+  for (const v of voices) {
+    if (!byLang[v.lang]) byLang[v.lang] = []
+    byLang[v.lang].push(v)
+  }
+
+  for (const [lang, langVoices] of Object.entries(byLang)) {
+    const group = document.createElement('optgroup')
+    group.label = lang
+    for (const v of langVoices) {
+      const opt = document.createElement('option')
+      opt.value = v.voiceURI
+      opt.textContent = v.name
+      group.appendChild(opt)
+    }
+    select.appendChild(group)
+  }
+
+  if (selectedVoiceURI) select.value = selectedVoiceURI
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +213,93 @@ export async function renderLibrary(document, compat) {
 }
 
 // ---------------------------------------------------------------------------
+// Player controls — Phase 3
+// ---------------------------------------------------------------------------
+
+export function initPlayerControls(compat, document) {
+  const playPauseBtn  = document.getElementById('play-pause-btn')
+  const skipBackBtn   = document.getElementById('skip-back-btn')
+  const skipFwdBtn    = document.getElementById('skip-fwd-btn')
+  const scrubber      = document.getElementById('scrubber')
+  const speedSelect   = document.getElementById('speed-select')
+  const pitchSlider   = document.getElementById('pitch-slider')
+  const volumeSlider  = document.getElementById('volume-slider')
+  const voiceSelect   = document.getElementById('voice-select')
+  const previewBtn    = document.getElementById('voice-preview-btn')
+
+  if (playPauseBtn) {
+    playPauseBtn.addEventListener('click', () => {
+      const label = playPauseBtn.getAttribute('aria-label')
+      const type = label === 'Pause' ? 'PAUSE' : 'PLAY'
+      sendMessage(MSG_TYPES.ACTION, { type }, compat)
+        .catch((e) => console.warn('[SidePanel] ACTION failed:', e))
+    })
+  }
+
+  if (skipBackBtn) {
+    skipBackBtn.addEventListener('click', () =>
+      sendMessage(MSG_TYPES.SKIP_BACK, { seconds: 10 }, compat)
+        .catch((e) => console.warn('[SidePanel] SKIP_BACK failed:', e))
+    )
+  }
+
+  if (skipFwdBtn) {
+    skipFwdBtn.addEventListener('click', () =>
+      sendMessage(MSG_TYPES.SKIP_FORWARD, { seconds: 10 }, compat)
+        .catch((e) => console.warn('[SidePanel] SKIP_FORWARD failed:', e))
+    )
+  }
+
+  if (scrubber) {
+    scrubber.addEventListener('change', () => {
+      const chunkIndex = parseInt(scrubber.value, 10)
+      const total = parseInt(scrubber.max, 10) + 1 || 1
+      scrubber.setAttribute('aria-valuetext', `Chunk ${chunkIndex + 1} of ${total}`)
+      sendMessage(MSG_TYPES.SEEK_TO_CHUNK, { chunkIndex }, compat)
+        .catch((e) => console.warn('[SidePanel] SEEK_TO_CHUNK failed:', e))
+    })
+  }
+
+  if (speedSelect) {
+    speedSelect.addEventListener('change', () =>
+      sendMessage(MSG_TYPES.SET_RATE, { rate: parseFloat(speedSelect.value) }, compat)
+        .catch((e) => console.warn('[SidePanel] SET_RATE failed:', e))
+    )
+  }
+
+  if (pitchSlider) {
+    pitchSlider.addEventListener('input', () =>
+      sendMessage(MSG_TYPES.SET_PITCH, { pitch: parseFloat(pitchSlider.value) }, compat)
+        .catch((e) => console.warn('[SidePanel] SET_PITCH failed:', e))
+    )
+  }
+
+  if (volumeSlider) {
+    volumeSlider.addEventListener('input', () =>
+      sendMessage(MSG_TYPES.SET_VOLUME, { volume: parseFloat(volumeSlider.value) }, compat)
+        .catch((e) => console.warn('[SidePanel] SET_VOLUME failed:', e))
+    )
+  }
+
+  if (voiceSelect) {
+    voiceSelect.addEventListener('change', () =>
+      sendMessage(MSG_TYPES.SET_VOICE, { voiceId: voiceSelect.value }, compat)
+        .catch((e) => console.warn('[SidePanel] SET_VOICE failed:', e))
+    )
+  }
+
+  if (previewBtn) {
+    previewBtn.addEventListener('click', () => {
+      const voiceId = voiceSelect?.value
+      if (voiceId) {
+        sendMessage(MSG_TYPES.SET_VOICE, { voiceId }, compat)
+          .catch((e) => console.warn('[SidePanel] SET_VOICE (preview) failed:', e))
+      }
+    })
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Port connection with exponential backoff
 // ---------------------------------------------------------------------------
 
@@ -175,6 +347,8 @@ if (typeof chrome !== 'undefined' || typeof browser !== 'undefined') {
       btn.addEventListener('click', () => renderLibrary(document, compat))
     }
   })
+
+  initPlayerControls(compat, document)
 
   const manager = createPortManager(compat, (state) => renderState(state, document))
   manager.connect()

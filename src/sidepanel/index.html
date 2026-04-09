@@ -18,6 +18,58 @@
       <p id="playback-status">idle</p>
       <progress id="parse-progress" max="100" value="0" style="display:none;width:100%"></progress>
       <p id="parse-message"></p>
+
+      <!-- Playback controls -->
+      <div id="playback-controls">
+        <button id="skip-back-btn" aria-label="Skip back 10 seconds">&#9664;&#9664;</button>
+        <button id="play-pause-btn" aria-label="Play">&#9654;</button>
+        <button id="skip-fwd-btn" aria-label="Skip forward 10 seconds">&#9654;&#9654;</button>
+      </div>
+
+      <!-- Scrubber -->
+      <input
+        type="range"
+        id="scrubber"
+        min="0"
+        max="0"
+        value="0"
+        aria-label="Playback position"
+        aria-valuetext="Chunk 1 of 1"
+      />
+
+      <!-- Speed -->
+      <div>
+        <label for="speed-select">Speed</label>
+        <select id="speed-select">
+          <option value="0.5">0.5×</option>
+          <option value="0.75">0.75×</option>
+          <option value="1.0" selected>1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+          <option value="1.75">1.75×</option>
+          <option value="2.0">2×</option>
+          <option value="2.5">2.5×</option>
+          <option value="3.0">3×</option>
+        </select>
+      </div>
+
+      <!-- Pitch -->
+      <div>
+        <label for="pitch-slider">Pitch</label>
+        <input type="range" id="pitch-slider" min="0.5" max="2.0" step="0.1" value="1.0" />
+      </div>
+
+      <!-- Volume -->
+      <div>
+        <label for="volume-slider">Volume</label>
+        <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1.0" />
+      </div>
+
+      <!-- Voice selector -->
+      <div>
+        <select id="voice-select" aria-label="Voice"></select>
+        <button id="voice-preview-btn">Preview</button>
+      </div>
     </div>
     <div id="chat" class="tab-content hidden"></div>
     <div id="library" class="tab-content hidden"></div>
