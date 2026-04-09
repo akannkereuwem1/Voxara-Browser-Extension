@@ -128,7 +128,7 @@ export function appendTokenToActiveBubble(token, document) {
   }
 }
 
-export function finaliseAssistantBubble(document) {
+export function finaliseAssistantBubble(_document) {
   if (!activeAssistantBubble) return
   const cursor = activeAssistantBubble.querySelector('.cursor')
   if (cursor) cursor.remove()

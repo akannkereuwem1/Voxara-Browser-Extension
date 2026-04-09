@@ -1,4 +1,3 @@
-// eslint-disable-next-line no-unused-vars
 import { BrowserCompat } from '../shared/browser-compat.js'
 
 export async function loadApiKey(compat, document) {
@@ -38,7 +37,7 @@ export async function saveApiKey(key, compat, document) {
         status.textContent = ''
       }
     }, 2000)
-  } catch (err) {
+  } catch {
     status.textContent = 'Failed to save key.'
     status.style.color = 'red'
   }
