@@ -5,10 +5,10 @@ export async function loadApiKey(compat, document) {
   if (!input) return
   const result = await compat.storage.get('openai_api_key')
   if (result && result.openai_api_key) {
-    input.placeholder = 'sk-... (Key Configured)'
+    input.placeholder = '... (Key Configured)'
     input.value = ''
   } else {
-    input.placeholder = 'sk-...'
+    input.placeholder = 'Enter key...'
     input.value = ''
   }
 }
@@ -17,8 +17,8 @@ export async function saveApiKey(key, compat, document) {
   const status = document.getElementById('api-key-status')
   if (!status) return
 
-  if (!key || typeof key !== 'string' || !key.startsWith('sk-')) {
-    status.textContent = 'Invalid API key. Must start with sk-'
+  if (!key || typeof key !== 'string') {
+    status.textContent = 'Invalid API key format.'
     status.style.color = 'red'
     return
   }
@@ -28,7 +28,7 @@ export async function saveApiKey(key, compat, document) {
     const input = document.getElementById('api-key-input')
     if (input) {
       input.value = ''
-      input.placeholder = 'sk-... (Key Configured)'
+      input.placeholder = '... (Key Configured)'
     }
     status.textContent = 'Saved successfully!'
     status.style.color = 'green'

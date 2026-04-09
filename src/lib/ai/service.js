@@ -15,7 +15,7 @@ export async function* streamAnswer({ query, contextText, history, compat }) {
   const result = await compat.storage.get('openai_api_key')
   const apiKey = result?.openai_api_key
   if (!apiKey) {
-    throw new Error('OpenAI API key not configured')
+    throw new Error('API key not configured')
   }
 
   const systemMessage = {
@@ -35,14 +35,14 @@ export async function* streamAnswer({ query, contextText, history, compat }) {
 
   const messages = [systemMessage, ...recentHistory, userMessage]
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: 'gemini-1.5-flash',
       stream: true,
       max_tokens: 300,
       messages
@@ -50,7 +50,7 @@ export async function* streamAnswer({ query, contextText, history, compat }) {
   })
 
   if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.status}`)
+    throw new Error(`AI API error: ${response.status}`)
   }
 
   const reader = response.body.getReader()
