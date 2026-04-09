@@ -5,6 +5,9 @@ import { loadPdf } from '../content/pdf/loader.js'
 import { extractText } from '../content/pdf/extractor.js'
 import { chunkPages } from '../content/pdf/chunker.js'
 import { hashArrayBuffer } from '../shared/hash.js'
+import { appendMessage, getThread } from '../lib/db/chat.js'
+import { assembleContext } from '../lib/ai/context.js'
+import { streamAnswer } from '../lib/ai/service.js'
 
 // ---------------------------------------------------------------------------
 // AppState
@@ -25,6 +28,8 @@ export const DEFAULT_APP_STATE = {
   pitch:             1.0,      // clamped to [0.5, 2.0]
   volume:            1.0,      // clamped to [0, 1]
   voiceId:           null,     // string | null — voiceURI of selected voice
+  // Phase 4 additions
+  chat:              { isStreaming: false, isMuted: false, pendingQuery: null },
 }
 
 export let appState = { ...DEFAULT_APP_STATE }
@@ -47,6 +52,12 @@ export function serializeState(state) {
     pitch:             state.pitch,
     volume:            state.volume,
     voiceId:           state.voiceId,
+    // Phase 4 additions
+    chat:              {
+      isStreaming: state.chat.isStreaming,
+      isMuted: state.chat.isMuted,
+      pendingQuery: state.chat.pendingQuery
+    },
   }
 }
 
@@ -78,6 +89,9 @@ export function handlePdfDetected(payload, state, _compat) {
 }
 
 export async function handleAction(payload, state, compat, db) {
+  if (payload.type === 'SET_CHAT_MUTED') {
+    handleSetChatMuted(payload, state)
+  }
   if (payload.type === 'PLAY') {
     if (!state.activeDocumentId && state.activePdfUrl && db) {
       await parsePdfForPlayback(state.activePdfUrl, state, db, compat)
@@ -347,6 +361,120 @@ export function handleSeekToChunk(payload, state, compat) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 4 handlers — AI Chat
+// ---------------------------------------------------------------------------
+
+export function handleSetChatMuted(payload, state) {
+  state.chat.isMuted = payload.data.muted
+  broadcastState(state, state.connectedPorts)
+}
+
+export async function handleAiQuery(payload, state, compat, db) {
+  const broadcast = (type, data) => {
+    const alive = []
+    for (const port of state.connectedPorts) {
+      try {
+        port.postMessage({ type, payload: data })
+        alive.push(port)
+      } catch (e) {
+        console.warn('[SW] Port send failed:', e)
+      }
+    }
+    state.connectedPorts = alive
+  }
+
+  if (!state.activeDocumentId) {
+    broadcast(MSG_TYPES.AI_RESPONSE_DONE, { error: 'no_active_document' })
+    return
+  }
+  if (state.chat.isStreaming) {
+    broadcast(MSG_TYPES.AI_RESPONSE_DONE, { error: 'query_in_progress' })
+    return
+  }
+
+  const priorStatus = state.playbackStatus
+  state.chat.isStreaming = true
+  state.chat.pendingQuery = payload.query
+  state.playbackStatus = 'ai_responding'
+  broadcastState(state, state.connectedPorts)
+
+  let sentenceBuffer = ''
+
+  try {
+    const timestamp = Date.now()
+    if (db) {
+      await appendMessage(db, state.activeDocumentId, {
+        role: 'user',
+        content: payload.query,
+        timestamp,
+        contextChunks: []
+      })
+    }
+
+    const contextText = db ? await assembleContext(db, state.activeDocumentId, state.currentChunkIndex, payload.query) : ''
+    const thread = db ? await getThread(db, state.activeDocumentId) : null
+    const history = thread ? thread.messages : []
+    const segmenter = new Intl.Segmenter('en', { granularity: 'sentence' })
+
+    const stream = streamAnswer({ query: payload.query, contextText, history, compat })
+    let fullResponse = ''
+
+    for await (const token of stream) {
+      broadcast(MSG_TYPES.AI_RESPONSE_TOKEN, { token })
+      fullResponse += token
+      sentenceBuffer += token
+
+      const segments = [...segmenter.segment(sentenceBuffer)]
+      if (segments.length > 1) {
+        const completeSentence = segments[0].segment
+        sentenceBuffer = segments.slice(1).map(s => s.segment).join('')
+        if (!state.chat.isMuted) {
+          sendMessage(MSG_TYPES.SPEAK_AI_SENTENCE, { sentence: completeSentence }, compat)
+            .catch((e) => console.warn('[SW] SPEAK_AI_SENTENCE delivery failed:', e))
+        }
+      }
+    }
+
+    if (sentenceBuffer.trim().length > 0 && !state.chat.isMuted) {
+      sendMessage(MSG_TYPES.SPEAK_AI_SENTENCE, { sentence: sentenceBuffer }, compat)
+        .catch((e) => console.warn('[SW] SPEAK_AI_SENTENCE delivery failed:', e))
+    }
+
+    if (db) {
+      await appendMessage(db, state.activeDocumentId, {
+        role: 'assistant',
+        content: fullResponse,
+        timestamp: Date.now(),
+        contextChunks: []
+      })
+    }
+
+    state.chat.isStreaming = false
+    state.chat.pendingQuery = null
+    state.playbackStatus = priorStatus
+    broadcastState(state, state.connectedPorts)
+    broadcast(MSG_TYPES.AI_RESPONSE_DONE, {})
+
+    if (priorStatus === 'playing') {
+      sendMessage(MSG_TYPES.SPEAK_CHUNK, {
+        documentId: state.activeDocumentId,
+        startChunkIndex: state.currentChunkIndex,
+        playbackRate: state.playbackRate,
+        pitch: state.pitch,
+        volume: state.volume,
+        voiceId: state.voiceId,
+      }, compat).catch((e) => console.warn('[SW] SPEAK_CHUNK delivery failed:', e))
+    }
+  } catch (err) {
+    state.chat.isStreaming = false
+    state.chat.pendingQuery = null
+    state.playbackStatus = priorStatus
+    broadcastState(state, state.connectedPorts)
+    broadcast(MSG_TYPES.AI_RESPONSE_DONE, { error: err.message })
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2 handlers
 // ---------------------------------------------------------------------------
 
@@ -510,6 +638,9 @@ export function buildDispatchTable(state, compat, db) {
     [MSG_TYPES.SKIP_FORWARD]:    (payload) => handleSkipForward(payload, state, compat, db),
     [MSG_TYPES.SKIP_BACK]:       (payload) => handleSkipBack(payload, state, compat),
     [MSG_TYPES.SEEK_TO_CHUNK]:   (payload) => handleSeekToChunk(payload, state, compat),
+    // Phase 4 additions
+    [MSG_TYPES.AI_QUERY]:        (payload) => handleAiQuery(payload, state, compat, db),
+    [MSG_TYPES.SPEAK_AI_SENTENCE]: (payload) => sendMessage(MSG_TYPES.SPEAK_AI_SENTENCE, payload, compat).catch(e => console.warn(e)),
   }
 }
 
