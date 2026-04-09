@@ -71,7 +71,14 @@
         <button id="voice-preview-btn">Preview</button>
       </div>
     </div>
-    <div id="chat" class="tab-content hidden"></div>
+    <div id="chat" class="tab-content hidden">
+      <div id="chat-messages" style="overflow-y: auto; max-height: 300px; display: flex; flex-direction: column; padding: 8px;"></div>
+      <div id="chat-controls-area" style="display: flex; gap: 4px; padding: 8px;">
+        <input type="text" id="chat-input" placeholder="Ask about this document..." style="flex: 1" />
+        <button id="chat-send">Send</button>
+        <button id="chat-mute" aria-pressed="false">Mute</button>
+      </div>
+    </div>
     <div id="library" class="tab-content hidden"></div>
     <script type="module" src="./index.js"></script>
   </body>

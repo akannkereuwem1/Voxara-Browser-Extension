@@ -26,6 +26,7 @@ if (typeof window !== 'undefined' && !window.speechSynthesis) {
 export function createBufferManager(synth, db, send, settings) {
   /** @type {Array<{id:string, documentId:string, sequenceIndex:number, text:string}>} */
   let queue = []
+  let aiQueue = []
   let currentIndex = 0
   let documentId = null
   let totalChunks = 0
@@ -88,6 +89,24 @@ export function createBufferManager(synth, db, send, settings) {
     synth.speak(utterance)
   }
 
+  function speakNextAi() {
+    if (!aiQueue.length) return
+    const utterance = new SpeechSynthesisUtterance(aiQueue[0])
+    applySettings(utterance)
+    utterance.onend = () => {
+      aiQueue.shift()
+      speakNextAi()
+    }
+    synth.speak(utterance)
+  }
+
+  function handleSpeakAiSentence(payload) {
+    aiQueue.push(payload.sentence)
+    if (aiQueue.length === 1) {
+      speakNextAi()
+    }
+  }
+
   async function handleSpeakChunk(payload) {
     documentId = payload.documentId
     const startIndex = payload.startChunkIndex ?? 0
@@ -126,6 +145,7 @@ export function createBufferManager(synth, db, send, settings) {
   function handleStopSpeech() {
     synth.cancel()
     queue = []
+    aiQueue = []
     currentIndex = 0
   }
 
@@ -151,6 +171,7 @@ export function createBufferManager(synth, db, send, settings) {
     handleSetPitch,
     handleSetVolume,
     handleSetVoice,
+    handleSpeakAiSentence,
   }
 }
 
@@ -180,6 +201,7 @@ export function registerHandlers(compat, synth, db, initialSettings = {}) {
     if (msg.type === MSG_TYPES.SET_PITCH)     return bm.handleSetPitch(msg.payload)
     if (msg.type === MSG_TYPES.SET_VOLUME)    return bm.handleSetVolume(msg.payload)
     if (msg.type === MSG_TYPES.SET_VOICE)     return bm.handleSetVoice(msg.payload)
+    if (msg.type === MSG_TYPES.SPEAK_AI_SENTENCE) return bm.handleSpeakAiSentence(msg.payload)
   }, compat)
 }
 

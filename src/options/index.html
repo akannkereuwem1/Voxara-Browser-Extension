@@ -5,7 +5,15 @@
     <title>Voxara Options</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <h2>Voxara API Keys</h2>
+      <div>
+        <label for="api-key-input">Gemini / OpenAI API Key:</label><br />
+        <input type="password" id="api-key-input" placeholder="Enter key..." />
+        <button id="api-key-save">Save</button>
+      </div>
+      <div id="api-key-status"></div>
+    </div>
     <script type="module" src="./index.js"></script>
   </body>
 </html>
