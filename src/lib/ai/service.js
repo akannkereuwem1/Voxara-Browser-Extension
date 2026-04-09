@@ -12,7 +12,8 @@
  * @throws {Error} if API key absent or HTTP status !== 200
  */
 export async function* streamAnswer({ query, contextText, history, compat }) {
-  const apiKey = await compat.storage.get('openai_api_key')
+  const result = await compat.storage.get('openai_api_key')
+  const apiKey = result?.openai_api_key
   if (!apiKey) {
     throw new Error('OpenAI API key not configured')
   }
