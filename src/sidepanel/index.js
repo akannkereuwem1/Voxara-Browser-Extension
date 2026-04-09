@@ -28,6 +28,147 @@ export function renderState(state, document) {
   if (statusEl) statusEl.textContent = state.playbackStatus ?? 'idle'
   renderProgress(state, document)
   renderPlayer(state, document)
+  renderChatState(state, document)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 - Chat UI
+// ---------------------------------------------------------------------------
+
+let activeAssistantBubble = null;
+
+export function renderChatState(state, document) {
+  const input = document.getElementById('chat-input')
+  const sendBtn = document.getElementById('chat-send')
+  const muteBtn = document.getElementById('chat-mute')
+  
+  if (!input || !sendBtn || !muteBtn) return
+
+  const disabled = !state.activeDocumentId || (state.chat && state.chat.isStreaming)
+  input.disabled = disabled
+  sendBtn.disabled = disabled
+
+  const isMuted = state.chat ? state.chat.isMuted : false
+  muteBtn.setAttribute('aria-pressed', isMuted ? 'true' : 'false')
+}
+
+export function initChatControls(compat, document) {
+  const input = document.getElementById('chat-input')
+  const sendBtn = document.getElementById('chat-send')
+  const muteBtn = document.getElementById('chat-mute')
+
+  if (!input || !sendBtn || !muteBtn) return
+
+  const sendQuery = () => {
+    const text = input.value.trim()
+    if (!text || input.disabled) return
+    input.value = ''
+    appendUserBubble(text, document)
+    appendAssistantBubble(document)
+    sendMessage(MSG_TYPES.AI_QUERY, { query: text }, compat)
+      .catch(e => console.warn('[SidePanel] AI_QUERY failed', e))
+  }
+
+  sendBtn.addEventListener('click', sendQuery)
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendQuery()
+    }
+  })
+
+  muteBtn.addEventListener('click', () => {
+    const current = muteBtn.getAttribute('aria-pressed') === 'true'
+    sendMessage(MSG_TYPES.ACTION, { type: 'SET_CHAT_MUTED', data: { muted: !current } }, compat)
+      .catch(e => console.warn('[SidePanel] SET_CHAT_MUTED failed', e))
+  })
+}
+
+export function appendUserBubble(text, document) {
+  const container = document.getElementById('chat-messages')
+  if (!container) return
+  const bubble = document.createElement('div')
+  bubble.className = 'chat-bubble user-bubble'
+  bubble.style.textAlign = 'right'
+  bubble.style.margin = '4px 0'
+  bubble.style.padding = '6px 10px'
+  bubble.style.background = '#e1f5fe'
+  bubble.style.borderRadius = '8px'
+  bubble.style.alignSelf = 'flex-end'
+  bubble.textContent = text
+  container.appendChild(bubble)
+  container.scrollTop = container.scrollHeight
+}
+
+export function appendAssistantBubble(document) {
+  const container = document.getElementById('chat-messages')
+  if (!container) return null
+  const bubble = document.createElement('div')
+  bubble.className = 'chat-bubble assistant-bubble'
+  bubble.style.textAlign = 'left'
+  bubble.style.margin = '4px 0'
+  bubble.style.padding = '6px 10px'
+  bubble.style.background = '#f5f5f5'
+  bubble.style.borderRadius = '8px'
+  bubble.style.alignSelf = 'flex-start'
+  bubble.innerHTML = '<span class="content"></span><span class="cursor" style="animation: blink 1s step-end infinite;">|</span>'
+  container.appendChild(bubble)
+  container.scrollTop = container.scrollHeight
+  activeAssistantBubble = bubble
+  return bubble
+}
+
+export function appendTokenToActiveBubble(token, document) {
+  if (!activeAssistantBubble) return
+  const span = activeAssistantBubble.querySelector('.content')
+  if (span) {
+    span.textContent += token
+    const container = document.getElementById('chat-messages')
+    if (container) container.scrollTop = container.scrollHeight
+  }
+}
+
+export function finaliseAssistantBubble(document) {
+  if (!activeAssistantBubble) return
+  const cursor = activeAssistantBubble.querySelector('.cursor')
+  if (cursor) cursor.remove()
+  activeAssistantBubble = null
+}
+
+export function renderChatError(message, isApiKeyError, document) {
+  if (!activeAssistantBubble) {
+    appendAssistantBubble(document)
+  }
+  const span = activeAssistantBubble.querySelector('.content')
+  if (span) {
+    span.textContent = `Error: ${message}`
+    span.style.color = 'red'
+  }
+  finaliseAssistantBubble(document)
+}
+
+export async function loadChatHistory(threadId, db, document) {
+  const container = document.getElementById('chat-messages')
+  if (!container || !threadId || !db) return
+  
+  container.innerHTML = ''
+  
+  try {
+    const thread = await db.get('chatThreads', threadId)
+    if (!thread || !thread.messages) return
+    for (const msg of thread.messages) {
+      if (msg.role === 'user') {
+        appendUserBubble(msg.content, document)
+      } else {
+        const bubble = appendAssistantBubble(document)
+        const span = bubble.querySelector('.content')
+        if (span) span.textContent = msg.content
+        finaliseAssistantBubble(document)
+      }
+    }
+  } catch(e) {
+    console.warn('[SidePanel] Failed to load chat history', e)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +456,15 @@ export function createPortManager(compat, onStateUpdate) {
     port.onMessage.addListener((msg) => {
       if (msg.type === MSG_TYPES.STATE_UPDATE) {
         onStateUpdate(msg.payload)
+      } else if (msg.type === MSG_TYPES.AI_RESPONSE_TOKEN) {
+        appendTokenToActiveBubble(msg.payload.token, document)
+      } else if (msg.type === MSG_TYPES.AI_RESPONSE_DONE) {
+        if (msg.payload.error) {
+          const isApiKeyError = msg.payload.error.includes('configured')
+          renderChatError(msg.payload.error, isApiKeyError, document)
+        } else {
+          finaliseAssistantBubble(document)
+        }
       }
     })
     port.onDisconnect.addListener(() => {
@@ -341,15 +491,28 @@ if (typeof chrome !== 'undefined' || typeof browser !== 'undefined') {
   const compat = BrowserCompat.init()
   initTabs(document)
 
-  // Wire Library tab to load documents on activation
+  // Wire Library and Chat tabs
+  let localState = null
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     if (btn.dataset.tab === 'library') {
       btn.addEventListener('click', () => renderLibrary(document, compat))
     }
+    if (btn.dataset.tab === 'chat') {
+      btn.addEventListener('click', async () => {
+        if (localState && localState.activeDocumentId) {
+          const db = await initDB()
+          await loadChatHistory(localState.activeDocumentId, db, document)
+        }
+      })
+    }
   })
 
   initPlayerControls(compat, document)
+  initChatControls(compat, document)
 
-  const manager = createPortManager(compat, (state) => renderState(state, document))
+  const manager = createPortManager(compat, (state) => {
+    localState = state
+    renderState(state, document)
+  })
   manager.connect()
 }
