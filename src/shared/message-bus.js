@@ -46,6 +46,10 @@ export const MSG_TYPES = Object.freeze({
   SKIP_FORWARD:   'SKIP_FORWARD',
   SKIP_BACK:      'SKIP_BACK',
   SEEK_TO_CHUNK:  'SEEK_TO_CHUNK',
+  // Phase 4 — AI Chat
+  AI_RESPONSE_TOKEN: 'AI_RESPONSE_TOKEN',
+  AI_RESPONSE_DONE:  'AI_RESPONSE_DONE',
+  SPEAK_AI_SENTENCE: 'SPEAK_AI_SENTENCE',
 })
 
 // ---------------------------------------------------------------------------
