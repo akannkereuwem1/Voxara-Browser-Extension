@@ -264,6 +264,7 @@ export async function ensureOffscreen(state, compat) {
     }
     // Give the offscreen document time to load and register its message listener.
     // chrome.runtime.sendMessage does not route SW→offscreen, so PING won't work.
+    /* global process */
     const delay = (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') ? 0 : 600
     await new Promise((r) => setTimeout(r, delay))
   }
